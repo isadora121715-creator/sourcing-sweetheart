@@ -14,7 +14,86 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cotacao_itens: {
+        Row: {
+          codigo: string | null
+          cotacao_id: string
+          created_at: string
+          id: string
+          material: string
+          observacao: string | null
+          ordem: number
+          preco_unitario: number | null
+          quantidade: number
+          unidade: string
+        }
+        Insert: {
+          codigo?: string | null
+          cotacao_id: string
+          created_at?: string
+          id?: string
+          material: string
+          observacao?: string | null
+          ordem?: number
+          preco_unitario?: number | null
+          quantidade?: number
+          unidade?: string
+        }
+        Update: {
+          codigo?: string | null
+          cotacao_id?: string
+          created_at?: string
+          id?: string
+          material?: string
+          observacao?: string | null
+          ordem?: number
+          preco_unitario?: number | null
+          quantidade?: number
+          unidade?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacao_itens_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cotacoes: {
+        Row: {
+          assunto: string
+          created_at: string
+          data_envio: string
+          fornecedor: string | null
+          id: string
+          observacoes: string | null
+          prazo_resposta: string | null
+          status: string
+        }
+        Insert: {
+          assunto: string
+          created_at?: string
+          data_envio?: string
+          fornecedor?: string | null
+          id?: string
+          observacoes?: string | null
+          prazo_resposta?: string | null
+          status?: string
+        }
+        Update: {
+          assunto?: string
+          created_at?: string
+          data_envio?: string
+          fornecedor?: string | null
+          id?: string
+          observacoes?: string | null
+          prazo_resposta?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
