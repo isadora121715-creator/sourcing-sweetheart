@@ -258,7 +258,7 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
       { name: `obs_${idx + 1}`, w: cols[8]!.w },
     ];
     fieldDefs.forEach((def) => {
-      const field = new AcroFormTextField();
+      const field = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };
       field.fieldName = def.name;
       field.Rect = [x + 0.8, y + 1, def.w - 1.6, rowH - 2];
       field.fontSize = 8;
@@ -285,7 +285,7 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   ];
   doc.text("Validade da proposta:", left + 138, y);
   condFields.forEach((c) => {
-    const field = new AcroFormTextField();
+    const field = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };
     field.fieldName = c.name;
     field.Rect = [c.x, y - 4.5, c.w, 6.5];
     field.fontSize = 9;

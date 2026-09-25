@@ -21,6 +21,16 @@ export type Cotacao = {
   itens: ItemCotacao[];
 };
 
+type ItemRow = {
+  id: string;
+  ordem: number;
+  material: string;
+  codigo: string | null;
+  unidade: string | null;
+  quantidade: number | string;
+  observacao: string | null;
+};
+
 export async function listarCotacoes(): Promise<Cotacao[]> {
   const { data, error } = await supabase
     .from("cotacoes")
