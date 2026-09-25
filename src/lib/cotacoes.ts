@@ -40,14 +40,14 @@ export async function listarCotacoes(): Promise<Cotacao[]> {
     itens: (row.cotacao_itens ?? [])
       .slice()
       .sort((a: { ordem: number }, b: { ordem: number }) => a.ordem - b.ordem)
-      .map((i: Record<string, unknown>) => ({
-        id: i.id as string,
-        ordem: (i.ordem as number) ?? 0,
-        material: (i.material as string) ?? "",
-        codigo: (i.codigo as string) ?? "",
-        unidade: (i.unidade as string) ?? "PC",
+      .map((i: ItemRow) => ({
+        id: i.id,
+        ordem: i.ordem ?? 0,
+        material: i.material ?? "",
+        codigo: i.codigo ?? "",
+        unidade: i.unidade ?? "PC",
         quantidade: Number(i.quantidade ?? 0),
-        observacao: (i.observacao as string) ?? "",
+        observacao: i.observacao ?? "",
       })),
   }));
 }
