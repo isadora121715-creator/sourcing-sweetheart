@@ -52,7 +52,7 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
 
   const headerRow = aoa.length; // 0-based index da linha de cabeçalho
   itens.forEach((item, idx) => {
-    const line = headerRow + 1 + idx + 1; // linha da planilha (1-based)
+    const line = headerRow + idx + 1; // linha da planilha (1-based)
     aoa.push([
       idx + 1,
       item.codigo || "",
@@ -68,7 +68,6 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
     ]);
   });
 
-  const totalLine = headerRow + 1 + itens.length + 1;
   aoa.push([]);
   aoa.push([
     "",
@@ -78,7 +77,7 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
     "",
     "",
     "",
-    { t: "n", f: `SUM(H${headerRow + 2}:H${totalLine - 2})` } as unknown as string,
+    { t: "n", f: `SUM(H${headerRow + 1}:H${headerRow + itens.length})` } as unknown as string,
     "",
     "",
   ]);

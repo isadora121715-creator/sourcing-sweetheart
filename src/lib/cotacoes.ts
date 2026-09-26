@@ -27,8 +27,13 @@ export function identificarCategoria(material: string): CategoriaMaterial | "" {
   if (/\b(tubo|tubos|tubular|pipe|pipes)\b/.test(texto)) return "Tubular";
 
   const conexao = /\b(cotovelo|curva|tee|tê|reducao|redução|luva|niple|nipples|conexao|conexão|fitting|elbow|coupling|socket|olet|weldolet|sockolet|threadolet)\b/.test(texto);
-  const medida = texto.match(/(?:dn\s*)?(\d+(?:[.,]\d+)?)\s*(?:"|''|pol|polegada|inch|in\b)/);
-  if (conexao && (!medida || Number(medida[1]?.replace(",", ".")) <= 4)) return "Forjadinho";
+  const medidaPolegadas = texto.match(/(\d+(?:[.,]\d+)?)\s*(?:"|''|pol|polegada|inch|in\b)/);
+  const medidaDn = texto.match(/\bdn\s*(\d+)\b/);
+  if (conexao) {
+    if (medidaPolegadas) return Number(medidaPolegadas[1]?.replace(",", ".")) <= 4 ? "Forjadinho" : "Tubular";
+    if (medidaDn) return Number(medidaDn[1]) <= 100 ? "Forjadinho" : "Tubular";
+    return "Forjadinho";
+  }
   return "";
 }
 
