@@ -16,6 +16,14 @@ function slug(text: string): string {
     .slice(0, 50);
 }
 
+function fmtExportDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB");
+}
+
+function categoryLabel(item: ItemCotacao): string {
+  return item.categoria || "Unclassified";
+}
+
 type Cabecalho = {
   assunto: string;
   fornecedor?: string | null;
@@ -27,49 +35,49 @@ type Cabecalho = {
 /** Planilha editável enviada ao fornecedor (colunas de preço em branco). */
 export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) {
   const wb = XLSX.utils.book_new();
-  const dataEnvio = info.dataEnvio ? fmtData(info.dataEnvio) : new Date().toLocaleDateString("pt-BR");
+  const dataEnvio = info.dataEnvio ? fmtExportDate(info.dataEnvio) : new Date().toLocaleDateString("en-GB");
 
   const aoa: (string | number)[][] = [
-    ["COTAÇÃO DE PEDIDOS"],
-    ["Assunto:", info.assunto],
-    ["Fornecedor:", info.fornecedor || ""],
-    ["Data de envio:", dataEnvio],
-    ["Prazo para resposta:", info.prazoResposta ? fmtData(info.prazoResposta) : ""],
-    ["Observações:", info.observacoes || ""],
+    ["REQUEST FOR QUOTATION"],
+    ["Subject:", info.assunto],
+    ["Supplier:", info.fornecedor || ""],
+    ["Sent date:", dataEnvio],
+    ["Reply due:", info.prazoResposta ? fmtExportDate(info.prazoResposta) : ""],
+    ["Notes:", info.observacoes || ""],
     [],
-    ["Preencha as colunas em amarelo: preço unitário, prazo de entrega e marca."],
+    ["Please complete the Unit Price, Delivery Time, Incoterm and Supplier Notes columns."],
     [],
-    ["Item", "Código", "Material / Descrição", "Un.", "Qtd", "Preço Unit.", "Total", "Prazo entrega", "Marca", "Obs. fornecedor"],
+    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"],
   ];
 
   const headerRow = aoa.length; // 0-based index da linha de cabeçalho
   itens.forEach((item, idx) => {
-    const line = headerRow + 1 + idx + 1; // linha da planilha (1-based)
+    const line = headerRow + idx + 1; // linha da planilha (1-based)
     aoa.push([
       idx + 1,
       item.codigo || "",
       item.material,
+      categoryLabel(item),
       item.unidade,
       item.quantidade,
       "",
-      { t: "n", f: `IF(F${line}="","",E${line}*F${line})` } as unknown as string,
+      { t: "n", f: `IF(G${line}="","",F${line}*G${line})` } as unknown as string,
       "",
       "",
       item.observacao || "",
     ]);
   });
 
-  const totalLine = headerRow + 1 + itens.length + 1;
   aoa.push([]);
   aoa.push([
     "",
     "",
-    "TOTAL GERAL",
+    "GRAND TOTAL",
     "",
     "",
     "",
-    { t: "n", f: `SUM(G${headerRow + 2}:G${totalLine - 2})` } as unknown as string,
     "",
+    { t: "n", f: `SUM(H${headerRow + 1}:H${headerRow + itens.length})` } as unknown as string,
     "",
     "",
   ]);
@@ -79,6 +87,7 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
     { wch: 6 },
     { wch: 16 },
     { wch: 50 },
+    { wch: 20 },
     { wch: 6 },
     { wch: 8 },
     { wch: 14 },
@@ -87,8 +96,8 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
     { wch: 16 },
     { wch: 28 },
   ];
-  XLSX.utils.book_append_sheet(wb, ws, "Cotação");
-  XLSX.writeFile(wb, `cotacao_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, "Quotation");
+  XLSX.writeFile(wb, `quotation_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 /** Planilha de histórico: assunto, data enviada, materiais e quantidades. */
@@ -96,12 +105,12 @@ export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
   const wb = XLSX.utils.book_new();
 
   const resumo = [
-    ["Assunto", "Fornecedor", "Data enviada", "Prazo resposta", "Itens", "Total de peças", "Status"],
+    ["Subject", "Supplier", "Sent Date", "Reply Due", "Items", "Total Quantity", "Status"],
     ...cotacoes.map((c) => [
       c.assunto,
       c.fornecedor || "",
-      fmtData(c.data_envio),
-      c.prazo_resposta ? fmtData(c.prazo_resposta) : "",
+      fmtExportDate(c.data_envio),
+      c.prazo_resposta ? fmtExportDate(c.prazo_resposta) : "",
       c.itens.length,
       c.itens.reduce((s, i) => s + i.quantidade, 0),
       c.status,
@@ -109,18 +118,19 @@ export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(resumo);
   wsResumo["!cols"] = [{ wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 12 }];
-  XLSX.utils.book_append_sheet(wb, wsResumo, "Cotações");
+  XLSX.utils.book_append_sheet(wb, wsResumo, "Quotations");
 
   const detalhe = [
-    ["Assunto", "Data enviada", "Fornecedor", "Item", "Código", "Material", "Un.", "Qtd", "Observação"],
+    ["Subject", "Sent Date", "Supplier", "Item", "Code", "Material", "Category", "Unit", "Qty", "Notes"],
     ...cotacoes.flatMap((c) =>
       c.itens.map((i, idx) => [
         c.assunto,
-        fmtData(c.data_envio),
+        fmtExportDate(c.data_envio),
         c.fornecedor || "",
         idx + 1,
         i.codigo || "",
         i.material,
+        categoryLabel(i),
         i.unidade,
         i.quantidade,
         i.observacao || "",
@@ -135,13 +145,14 @@ export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
     { wch: 6 },
     { wch: 16 },
     { wch: 46 },
+    { wch: 20 },
     { wch: 6 },
     { wch: 8 },
     { wch: 28 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsDet, "Materiais");
+  XLSX.utils.book_append_sheet(wb, wsDet, "Materials");
 
-  XLSX.writeFile(wb, `historico_cotacoes_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `quotation_history_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 /** PDF editável (campos de formulário) para o fornecedor preencher os preços. */
@@ -150,18 +161,19 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const BLUE: [number, number, number] = [29, 78, 216];
-  const dataEnvio = info.dataEnvio ? fmtData(info.dataEnvio) : new Date().toLocaleDateString("pt-BR");
+  const dataEnvio = info.dataEnvio ? fmtExportDate(info.dataEnvio) : new Date().toLocaleDateString("en-GB");
 
   const cols = [
     { label: "Item", w: 12 },
-    { label: "Código", w: 26 },
-    { label: "Material / Descrição", w: 92 },
-    { label: "Un.", w: 12 },
-    { label: "Qtd", w: 16 },
-    { label: "Preço Unit.", w: 30 },
-    { label: "Prazo entrega", w: 32 },
-    { label: "Marca", w: 30 },
-    { label: "Observação", w: 30 },
+    { label: "Code", w: 22 },
+    { label: "Material / Description", w: 64 },
+    { label: "Category", w: 27 },
+    { label: "Unit", w: 11 },
+    { label: "Qty", w: 14 },
+    { label: "Unit Price", w: 27 },
+    { label: "Delivery Time", w: 29 },
+    { label: "Incoterm", w: 28 },
+    { label: "Supplier Notes", w: 36 },
   ];
   const left = 8;
   const rowH = 9;
@@ -172,14 +184,14 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("Solicitação de Cotação", left, 9);
+    doc.text("REQUEST FOR QUOTATION", left, 9);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text(`Assunto: ${info.assunto}`, left, 15.5);
+    doc.text(`Subject: ${info.assunto}`, left, 15.5);
     doc.setFontSize(8);
-    doc.text(`Enviado em: ${dataEnvio}`, pageW - left, 9, { align: "right" });
+    doc.text(`Sent: ${dataEnvio}`, pageW - left, 9, { align: "right" });
     if (info.prazoResposta) {
-      doc.text(`Responder até: ${fmtData(info.prazoResposta)}`, pageW - left, 15.5, { align: "right" });
+      doc.text(`Reply by: ${fmtExportDate(info.prazoResposta)}`, pageW - left, 15.5, { align: "right" });
     }
   };
 
@@ -205,16 +217,16 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   doc.setTextColor(60, 60, 60);
   doc.setFontSize(8.5);
   if (info.fornecedor) {
-    doc.text(`Fornecedor: ${info.fornecedor}`, left, y);
+    doc.text(`Supplier: ${info.fornecedor}`, left, y);
     y += 5;
   }
   if (info.observacoes) {
-    const lines = doc.splitTextToSize(`Observações: ${info.observacoes}`, pageW - left * 2);
+    const lines = doc.splitTextToSize(`Notes: ${info.observacoes}`, pageW - left * 2);
     doc.text(lines, left, y);
     y += lines.length * 4.2 + 1;
   }
   doc.setFontSize(8);
-  doc.text("Os campos de preço, prazo, marca e observação são editáveis neste PDF.", left, y);
+  doc.text("Unit price, delivery time, Incoterm and supplier notes are editable in this PDF.", left, y);
   y += 5;
 
   y = drawTableHead(y);
@@ -241,6 +253,7 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
       String(idx + 1),
       item.codigo || "—",
       descLines,
+      categoryLabel(item),
       item.unidade,
       String(item.quantidade),
     ];
@@ -252,10 +265,10 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
     // Campos editáveis (AcroForm)
     const fieldDefs: { name: string; w: number }[] = [
-      { name: `preco_${idx + 1}`, w: cols[5]!.w },
-      { name: `prazo_${idx + 1}`, w: cols[6]!.w },
-      { name: `marca_${idx + 1}`, w: cols[7]!.w },
-      { name: `obs_${idx + 1}`, w: cols[8]!.w },
+      { name: `unit_price_${idx + 1}`, w: cols[6]!.w },
+      { name: `delivery_time_${idx + 1}`, w: cols[7]!.w },
+      { name: `incoterm_${idx + 1}`, w: cols[8]!.w },
+      { name: `supplier_notes_${idx + 1}`, w: cols[9]!.w },
     ];
     fieldDefs.forEach((def) => {
       const field = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };
@@ -278,12 +291,12 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   }
   doc.setFontSize(8.5);
   doc.setTextColor(60, 60, 60);
-  doc.text("Condições de pagamento:", left, y);
+  doc.text("Payment terms:", left, y);
   const condFields: { name: string; x: number; w: number }[] = [
-    { name: "condicoes_pagamento", x: left + 42, w: 90 },
-    { name: "validade_proposta", x: left + 178, w: 60 },
+    { name: "payment_terms", x: left + 31, w: 100 },
+    { name: "quotation_validity", x: left + 179, w: 60 },
   ];
-  doc.text("Validade da proposta:", left + 138, y);
+  doc.text("Quotation validity:", left + 139, y);
   condFields.forEach((c) => {
     const field = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };
     field.fieldName = c.name;
@@ -295,7 +308,7 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
   doc.setFontSize(7);
   doc.setTextColor(150, 150, 150);
-  doc.text(`Cotação — ${info.assunto} — gerado em ${dataEnvio}`, pageW / 2, pageH - 5, { align: "center" });
+  doc.text(`Quotation — ${info.assunto} — generated on ${dataEnvio}`, pageW / 2, pageH - 5, { align: "center" });
 
-  doc.save(`cotacao_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  doc.save(`quotation_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
