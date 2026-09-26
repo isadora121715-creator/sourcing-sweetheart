@@ -82,7 +82,6 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
     "",
     "",
   ]);
-    "",
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
