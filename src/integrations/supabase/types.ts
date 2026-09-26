@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       cotacao_itens: {
         Row: {
+          categoria: string | null
           codigo: string | null
           cotacao_id: string
           created_at: string
@@ -28,6 +29,7 @@ export type Database = {
           unidade: string
         }
         Insert: {
+          categoria?: string | null
           codigo?: string | null
           cotacao_id: string
           created_at?: string
@@ -40,6 +42,7 @@ export type Database = {
           unidade?: string
         }
         Update: {
+          categoria?: string | null
           codigo?: string | null
           cotacao_id?: string
           created_at?: string

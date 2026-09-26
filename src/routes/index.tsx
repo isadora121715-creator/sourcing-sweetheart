@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -34,6 +35,8 @@ import {
   excluirCotacao,
   listarCotacoes,
   salvarCotacao,
+  CATEGORIAS_MATERIAL,
+  identificarCategoria,
   type ItemCotacao,
 } from "@/lib/cotacoes";
 import {
@@ -66,7 +69,7 @@ export const Route = createFileRoute("/")({
 });
 
 function linhaVazia(ordem: number): ItemCotacao {
-  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "" };
+  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "" };
 }
 
 function CotacaoPage() {
@@ -232,6 +235,7 @@ function CotacaoPage() {
                       <TableHead className="w-10">#</TableHead>
                       <TableHead className="w-32">Código</TableHead>
                       <TableHead>Material / Descrição *</TableHead>
+                      <TableHead className="w-44">Categoria</TableHead>
                       <TableHead className="w-20">Un.</TableHead>
                       <TableHead className="w-24">Qtd</TableHead>
                       <TableHead className="w-48">Observação</TableHead>
@@ -252,9 +256,28 @@ function CotacaoPage() {
                         <TableCell>
                           <Input
                             value={item.material}
-                            onChange={(e) => atualizarItem(idx, { material: e.target.value })}
+                            onChange={(e) => atualizarItem(idx, {
+                              material: e.target.value,
+                              categoria: identificarCategoria(e.target.value),
+                            })}
                             placeholder="Descrição do material"
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.categoria || "unclassified"}
+                            onValueChange={(value) => atualizarItem(idx, { categoria: value === "unclassified" ? "" : value as ItemCotacao["categoria"] })}
+                          >
+                            <SelectTrigger aria-label={`Categoria do item ${idx + 1}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unclassified">Não classificado</SelectItem>
+                              {CATEGORIAS_MATERIAL.map((categoria) => (
+                                <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell>
                           <Input
@@ -418,6 +441,7 @@ function CotacaoPage() {
                             <TableHead className="w-10">#</TableHead>
                             <TableHead className="w-32">Código</TableHead>
                             <TableHead>Material</TableHead>
+                            <TableHead className="w-44">Categoria</TableHead>
                             <TableHead className="w-20">Un.</TableHead>
                             <TableHead className="w-20 text-right">Qtd</TableHead>
                           </TableRow>
@@ -428,6 +452,7 @@ function CotacaoPage() {
                               <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
                               <TableCell>{i.codigo || "—"}</TableCell>
                               <TableCell>{i.material}</TableCell>
+                              <TableCell><Badge variant="outline">{i.categoria || "Não classificado"}</Badge></TableCell>
                               <TableCell>{i.unidade}</TableCell>
                               <TableCell className="text-right tabular-nums">{i.quantidade}</TableCell>
                             </TableRow>

@@ -8,7 +8,29 @@ export type ItemCotacao = {
   unidade: string;
   quantidade: number;
   observacao: string;
+  categoria: CategoriaMaterial | "";
 };
+
+export type CategoriaMaterial = "Flange" | "Junta (Gasket)" | "Forjadinho" | "Tubular";
+
+export const CATEGORIAS_MATERIAL: CategoriaMaterial[] = [
+  "Flange",
+  "Junta (Gasket)",
+  "Forjadinho",
+  "Tubular",
+];
+
+export function identificarCategoria(material: string): CategoriaMaterial | "" {
+  const texto = material.toLocaleLowerCase("pt-BR");
+  if (/\b(flange|flanged)\b/.test(texto)) return "Flange";
+  if (/\b(junta|juntas|gasket|gaskets)\b/.test(texto)) return "Junta (Gasket)";
+  if (/\b(tubo|tubos|tubular|pipe|pipes)\b/.test(texto)) return "Tubular";
+
+  const conexao = /\b(cotovelo|curva|tee|tê|reducao|redução|luva|niple|nipples|conexao|conexão|fitting|elbow|coupling|socket|olet|weldolet|sockolet|threadolet)\b/.test(texto);
+  const medida = texto.match(/(?:dn\s*)?(\d+(?:[.,]\d+)?)\s*(?:"|''|pol|polegada|inch|in\b)/);
+  if (conexao && (!medida || Number(medida[1]?.replace(",", ".")) <= 4)) return "Forjadinho";
+  return "";
+}
 
 export type Cotacao = {
   id: string;
@@ -29,6 +51,7 @@ type ItemRow = {
   unidade: string | null;
   quantidade: number | string;
   observacao: string | null;
+  categoria: string | null;
 };
 
 export async function listarCotacoes(): Promise<Cotacao[]> {
@@ -58,6 +81,9 @@ export async function listarCotacoes(): Promise<Cotacao[]> {
         unidade: i.unidade ?? "PC",
         quantidade: Number(i.quantidade ?? 0),
         observacao: i.observacao ?? "",
+        categoria: CATEGORIAS_MATERIAL.includes(i.categoria as CategoriaMaterial)
+          ? (i.categoria as CategoriaMaterial)
+          : "",
       })),
   }));
 }
@@ -93,6 +119,7 @@ export async function salvarCotacao(input: {
       unidade: item.unidade || "PC",
       quantidade: item.quantidade,
       observacao: item.observacao || null,
+      categoria: item.categoria || null,
     })),
   );
 
