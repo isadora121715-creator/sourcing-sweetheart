@@ -32,6 +32,44 @@ type Cabecalho = {
   dataEnvio?: string;
 };
 
+export type RespostaImportada = {
+  item: number;
+  precoUnitario: number | null;
+  prazoEntrega: string;
+  incoterm: string;
+  observacaoFornecedor: string;
+};
+
+export async function importarRespostaFornecedor(file: File): Promise<RespostaImportada[]> {
+  const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const firstSheet = wb.SheetNames[0];
+  if (!firstSheet) throw new Error("A planilha não possui abas.");
+  const ws = wb.Sheets[firstSheet];
+  if (!ws) throw new Error("Não foi possível abrir a primeira aba.");
+  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: "", raw: false });
+  const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell).trim() === "Unit Price"));
+  if (headerIndex < 0) throw new Error("A coluna “Unit Price” não foi encontrada.");
+  const header = rows[headerIndex]?.map((cell) => String(cell).trim()) ?? [];
+  const col = (name: string) => header.indexOf(name);
+  const required = ["Item", "Unit Price", "Delivery Time", "Incoterm", "Supplier Notes"];
+  if (required.some((name) => col(name) < 0)) throw new Error("A planilha não tem todas as colunas do modelo enviado.");
+
+  return rows.slice(headerIndex + 1).flatMap((row) => {
+    const item = Number(row[col("Item")]);
+    if (!Number.isInteger(item) || item < 1) return [];
+    const rawPrice = String(row[col("Unit Price")] ?? "").trim();
+    const normalized = rawPrice.replace(/\s/g, "").replace(/(?=.*[,])\./g, "").replace(",", ".");
+    const parsedPrice = rawPrice === "" ? null : Number(normalized);
+    return [{
+      item,
+      precoUnitario: parsedPrice !== null && Number.isFinite(parsedPrice) ? parsedPrice : null,
+      prazoEntrega: String(row[col("Delivery Time")] ?? "").trim(),
+      incoterm: String(row[col("Incoterm")] ?? "").trim(),
+      observacaoFornecedor: String(row[col("Supplier Notes")] ?? "").trim(),
+    }];
+  });
+}
+
 /** Planilha editável enviada ao fornecedor (colunas de preço em branco). */
 export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) {
   const wb = XLSX.utils.book_new();
@@ -98,6 +136,29 @@ export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) 
   ];
   XLSX.utils.book_append_sheet(wb, ws, "Quotation");
   XLSX.writeFile(wb, `quotation_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/** Planilha preenchida com a resposta recebida do fornecedor. */
+export function exportPlanilhaPrecos(info: Cabecalho, itens: ItemCotacao[]) {
+  const wb = XLSX.utils.book_new();
+  const dataEnvio = info.dataEnvio ? fmtExportDate(info.dataEnvio) : new Date().toLocaleDateString("en-GB");
+  const aoa: (string | number | { t: string; f: string })[][] = [
+    ["SUPPLIER QUOTATION RESPONSE"], ["Subject:", info.assunto], ["Supplier:", info.fornecedor || ""],
+    ["Sent date:", dataEnvio], [],
+    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"],
+  ];
+  const headerRow = aoa.length;
+  itens.forEach((item, idx) => {
+    const line = headerRow + idx + 1;
+    aoa.push([idx + 1, item.codigo || "", item.material, categoryLabel(item), item.unidade, item.quantidade,
+      item.precoUnitario ?? "", { t: "n", f: `IF(G${line}="","",F${line}*G${line})` },
+      item.prazoEntrega, item.incoterm, item.observacaoFornecedor]);
+  });
+  aoa.push([], ["", "", "GRAND TOTAL", "", "", "", "", { t: "n", f: `SUM(H${headerRow + 1}:H${headerRow + itens.length})` }, "", "", ""]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 50 }, { wch: 20 }, { wch: 6 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 28 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Supplier Response");
+  XLSX.writeFile(wb, `supplier_response_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 /** Planilha de histórico: assunto, data enviada, materiais e quantidades. */
