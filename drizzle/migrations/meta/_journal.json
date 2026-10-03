@@ -15,6 +15,13 @@
       "when": 1790381031963,
       "tag": "0001_add_material_category",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791040952166,
+      "tag": "0002_add_supplier_quote_response_fields",
+      "breakpoints": true
     }
   ]
 }

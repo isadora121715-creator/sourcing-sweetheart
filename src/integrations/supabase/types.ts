@@ -21,9 +21,12 @@ export type Database = {
           cotacao_id: string
           created_at: string
           id: string
+          incoterm: string | null
           material: string
           observacao: string | null
+          observacao_fornecedor: string | null
           ordem: number
+          prazo_entrega: string | null
           preco_unitario: number | null
           quantidade: number
           unidade: string
@@ -34,9 +37,12 @@ export type Database = {
           cotacao_id: string
           created_at?: string
           id?: string
+          incoterm?: string | null
           material: string
           observacao?: string | null
+          observacao_fornecedor?: string | null
           ordem?: number
+          prazo_entrega?: string | null
           preco_unitario?: number | null
           quantidade?: number
           unidade?: string
@@ -47,9 +53,12 @@ export type Database = {
           cotacao_id?: string
           created_at?: string
           id?: string
+          incoterm?: string | null
           material?: string
           observacao?: string | null
+          observacao_fornecedor?: string | null
           ordem?: number
+          prazo_entrega?: string | null
           preco_unitario?: number | null
           quantidade?: number
           unidade?: string
