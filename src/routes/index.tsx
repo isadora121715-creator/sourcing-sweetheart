@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -11,6 +11,7 @@ import {
   Package,
   Plus,
   Save,
+  Upload,
   Trash2,
 } from "lucide-react";
 
@@ -30,19 +31,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Toaster } from "@/components/ui/sonner";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import {
   excluirCotacao,
   listarCotacoes,
   salvarCotacao,
+  salvarRespostaCotacao,
   CATEGORIAS_MATERIAL,
   identificarCategoria,
   type ItemCotacao,
+  type Cotacao,
 } from "@/lib/cotacoes";
 import {
   exportPdfEditavel,
   exportPlanilhaFornecedor,
   exportPlanilhaHistorico,
+  exportPlanilhaPrecos,
+  importarRespostaFornecedor,
   fmtData,
 } from "@/lib/exportCotacao";
 
@@ -69,7 +75,7 @@ export const Route = createFileRoute("/")({
 });
 
 function linhaVazia(ordem: number): ItemCotacao {
-  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "" };
+  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "", precoUnitario: null, prazoEntrega: "", incoterm: "", observacaoFornecedor: "" };
 }
 
 function CotacaoPage() {
@@ -80,6 +86,9 @@ function CotacaoPage() {
   const [prazoResposta, setPrazoResposta] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<ItemCotacao[]>([linhaVazia(0)]);
+  const [cotacaoResposta, setCotacaoResposta] = useState<Cotacao | null>(null);
+  const [itensResposta, setItensResposta] = useState<ItemCotacao[]>([]);
+  const arquivoRef = useRef<HTMLInputElement>(null);
 
   const { data: cotacoes = [], isLoading } = useQuery({
     queryKey: ["cotacoes"],
@@ -103,6 +112,38 @@ function CotacaoPage() {
     },
     onError: (e: Error) => toast.error(`Não foi possível excluir: ${e.message}`),
   });
+
+  const salvarResposta = useMutation({
+    mutationFn: salvarRespostaCotacao,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cotacoes"] });
+      setCotacaoResposta(null);
+      toast.success("Preços do fornecedor salvos.");
+    },
+    onError: (e: Error) => toast.error(`Não foi possível salvar os preços: ${e.message}`),
+  });
+
+  function abrirResposta(cotacao: Cotacao) {
+    setCotacaoResposta(cotacao);
+    setItensResposta(cotacao.itens.map((item) => ({ ...item })));
+  }
+
+  function atualizarResposta(idx: number, patch: Partial<ItemCotacao>) {
+    setItensResposta((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
+  }
+
+  async function importarArquivo(file: File) {
+    try {
+      const resposta = await importarRespostaFornecedor(file);
+      setItensResposta((prev) => prev.map((item, idx) => {
+        const importado = resposta.find((linha) => linha.item === idx + 1);
+        return importado ? { ...item, ...importado } : item;
+      }));
+      toast.success(`${resposta.length} item(ns) importado(s). Confira antes de salvar.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível ler a planilha.");
+    }
+  }
 
   const itensValidos = itens.filter((i) => i.material.trim() !== "");
   const totalPecas = itensValidos.reduce((s, i) => s + (Number(i.quantidade) || 0), 0);
@@ -392,6 +433,14 @@ function CotacaoPage() {
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => abrirResposta(c)}>
+                          <Save className="mr-1.5 h-4 w-4" /> Registrar preços
+                        </Button>
+                        {c.itens.some((item) => item.precoUnitario !== null) && (
+                          <Button size="sm" variant="outline" onClick={() => exportPlanilhaPrecos({ assunto: c.assunto, fornecedor: c.fornecedor, dataEnvio: c.data_envio }, c.itens)}>
+                            <Download className="mr-1.5 h-4 w-4" /> Baixar preços
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -434,6 +483,14 @@ function CotacaoPage() {
                       </div>
                     </div>
 
+                    {c.itens.some((item) => item.precoUnitario !== null) && (
+                      <div className="mt-3 flex items-center gap-2 border-y py-2 text-sm">
+                        <Badge>Respondida</Badge>
+                        <span className="text-muted-foreground">Valor total recebido:</span>
+                        <strong className="tabular-nums">{c.itens.reduce((total, item) => total + item.quantidade * (item.precoUnitario ?? 0), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      </div>
+                    )}
+
                     <div className="mt-3 overflow-x-auto">
                       <Table>
                         <TableHeader>
@@ -467,6 +524,38 @@ function CotacaoPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={cotacaoResposta !== null} onOpenChange={(open) => !open && setCotacaoResposta(null)}>
+        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Registrar preços do fornecedor</DialogTitle><DialogDescription>{cotacaoResposta?.assunto}</DialogDescription></DialogHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={arquivoRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importarArquivo(file); event.target.value = ""; }} />
+            <Button variant="outline" onClick={() => arquivoRef.current?.click()}><Upload className="mr-1.5 h-4 w-4" /> Anexar planilha recebida</Button>
+            <span className="text-sm text-muted-foreground">ou preencha os valores abaixo</span>
+          </div>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead className="w-10">#</TableHead><TableHead>Material</TableHead><TableHead className="w-32">Preço unitário</TableHead><TableHead className="w-36">Prazo de entrega</TableHead><TableHead className="w-28">Incoterm</TableHead><TableHead className="w-52">Observação</TableHead></TableRow></TableHeader>
+              <TableBody>{itensResposta.map((item, idx) => (
+                <TableRow key={item.id ?? idx}>
+                  <TableCell>{idx + 1}</TableCell>
+                  <TableCell><div className="min-w-48 font-medium">{item.material}</div><div className="text-xs text-muted-foreground">{item.quantidade} {item.unidade}</div></TableCell>
+                  <TableCell><Input aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
+                  <TableCell><Input aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
+                  <TableCell><Input aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
+                  <TableCell><Input aria-label={`Observação do fornecedor do item ${idx + 1}`} value={item.observacaoFornecedor} onChange={(e) => atualizarResposta(idx, { observacaoFornecedor: e.target.value })} /></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCotacaoResposta(null)}>Cancelar</Button>
+            <Button disabled={salvarResposta.isPending || !cotacaoResposta} onClick={() => { if (!cotacaoResposta) return; salvarResposta.mutate({ cotacaoId: cotacaoResposta.id, itens: itensResposta }); }}>
+              {salvarResposta.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />} Salvar preços
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
