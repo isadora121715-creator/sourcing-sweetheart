@@ -97,6 +97,134 @@ function melhorPreco(cotacao: Cotacao, itemId: string | undefined): { preco: num
   return melhor;
 }
 
+const VISAO_COMPARATIVO = "comparativo";
+
+/**
+ * Materiais de uma cotação salva. Com respostas, permite escolher entre o comparativo
+ * (mesmas colunas da planilha de comparativo) e os valores de um fornecedor específico.
+ */
+function ItensHistorico({ cotacao }: { cotacao: Cotacao }) {
+  const [visao, setVisao] = useState(VISAO_COMPARATIVO);
+  const respostas = cotacao.respostas;
+  const respostaSelecionada = respostas.find((r) => r.id === visao) ?? null;
+  const modo = respostas.length === 0 ? "itens" : respostaSelecionada ? "fornecedor" : "comparativo";
+  const itensFornecedor = respostaSelecionada ? itensComResposta(cotacao, respostaSelecionada) : [];
+
+  return (
+    <div className="mt-3 space-y-2">
+      {respostas.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor={`visao-${cotacao.id}`} className="text-sm">Ver preços de</Label>
+          <Select value={respostaSelecionada ? visao : VISAO_COMPARATIVO} onValueChange={setVisao}>
+            <SelectTrigger id={`visao-${cotacao.id}`} className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={VISAO_COMPARATIVO}>Comparativo — todos os fornecedores</SelectItem>
+              {respostas.map((r) => (
+                <SelectItem key={r.id} value={r.id}>{r.fornecedor}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">#</TableHead>
+              <TableHead className="w-32">Código</TableHead>
+              <TableHead>Material</TableHead>
+              <TableHead className="w-44">Categoria</TableHead>
+              <TableHead className="w-20">Un.</TableHead>
+              <TableHead className="w-20 text-right">Qtd</TableHead>
+              {modo === "comparativo" && (
+                <>
+                  {respostas.map((r) => (
+                    <TableHead key={r.id} className="text-right">{r.fornecedor}<div className="text-xs font-normal">Preço unit.</div></TableHead>
+                  ))}
+                  <TableHead className="text-right">Melhor preço</TableHead>
+                  <TableHead>Melhor fornecedor</TableHead>
+                </>
+              )}
+              {modo === "fornecedor" && (
+                <>
+                  <TableHead className="text-right">Preço unit.</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Prazo de entrega</TableHead>
+                  <TableHead>Incoterm</TableHead>
+                  <TableHead>Observação</TableHead>
+                </>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cotacao.itens.map((i, idx) => {
+              const melhor = modo === "comparativo" ? melhorPreco(cotacao, i.id) : null;
+              const doFornecedor = itensFornecedor[idx];
+              return (
+                <TableRow key={i.id ?? idx}>
+                  <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                  <TableCell>{i.codigo || "—"}</TableCell>
+                  <TableCell>{i.material}</TableCell>
+                  <TableCell><Badge variant="outline">{i.categoria || "Não classificado"}</Badge></TableCell>
+                  <TableCell>{i.unidade}</TableCell>
+                  <TableCell className="text-right tabular-nums">{i.quantidade}</TableCell>
+                  {modo === "comparativo" && (
+                    <>
+                      {respostas.map((r) => {
+                        const preco = i.id ? r.precos[i.id]?.precoUnitario ?? null : null;
+                        const ehMelhor = preco !== null && melhor !== null && preco === melhor.preco;
+                        return (
+                          <TableCell key={r.id} className={`text-right tabular-nums ${ehMelhor ? "font-semibold text-primary" : ""}`}>
+                            {preco === null ? "—" : fmtValor(preco)}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-right font-semibold tabular-nums">{melhor ? fmtValor(melhor.preco) : "—"}</TableCell>
+                      <TableCell>{melhor?.fornecedor ?? "—"}</TableCell>
+                    </>
+                  )}
+                  {modo === "fornecedor" && doFornecedor && (
+                    <>
+                      <TableCell className="text-right tabular-nums">{doFornecedor.precoUnitario === null ? "—" : fmtValor(doFornecedor.precoUnitario)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{doFornecedor.precoUnitario === null ? "—" : fmtValor(doFornecedor.precoUnitario * i.quantidade)}</TableCell>
+                      <TableCell>{doFornecedor.prazoEntrega || "—"}</TableCell>
+                      <TableCell>{doFornecedor.incoterm || "—"}</TableCell>
+                      <TableCell>{doFornecedor.observacaoFornecedor || "—"}</TableCell>
+                    </>
+                  )}
+                </TableRow>
+              );
+            })}
+            {modo !== "itens" && (
+              <TableRow className="font-semibold">
+                <TableCell colSpan={6} className="text-right">Total geral</TableCell>
+                {modo === "comparativo" && (
+                  <>
+                    {respostas.map((r) => (
+                      <TableCell key={r.id} className="text-right tabular-nums">{fmtValor(totalResposta(cotacao, r))}</TableCell>
+                    ))}
+                    <TableCell colSpan={2} />
+                  </>
+                )}
+                {modo === "fornecedor" && respostaSelecionada && (
+                  <>
+                    <TableCell />
+                    <TableCell className="text-right tabular-nums">{fmtValor(totalResposta(cotacao, respostaSelecionada))}</TableCell>
+                    <TableCell colSpan={3} />
+                  </>
+                )}
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 function linhaVazia(ordem: number): ItemCotacao {
   return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "", precoUnitario: null, prazoEntrega: "", incoterm: "", observacaoFornecedor: "" };
 }
@@ -551,46 +679,7 @@ function CotacaoPage() {
                       </div>
                     )}
 
-                    <div className="mt-3 overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-10">#</TableHead>
-                            <TableHead className="w-32">Código</TableHead>
-                            <TableHead>Material</TableHead>
-                            <TableHead className="w-44">Categoria</TableHead>
-                            <TableHead className="w-20">Un.</TableHead>
-                            <TableHead className="w-20 text-right">Qtd</TableHead>
-                            {c.respostas.length > 0 && <TableHead className="w-48 text-right">Melhor preço unit.</TableHead>}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {c.itens.map((i, idx) => {
-                            const melhor = c.respostas.length > 0 ? melhorPreco(c, i.id) : null;
-                            return (
-                              <TableRow key={i.id ?? idx}>
-                                <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                                <TableCell>{i.codigo || "—"}</TableCell>
-                                <TableCell>{i.material}</TableCell>
-                                <TableCell><Badge variant="outline">{i.categoria || "Não classificado"}</Badge></TableCell>
-                                <TableCell>{i.unidade}</TableCell>
-                                <TableCell className="text-right tabular-nums">{i.quantidade}</TableCell>
-                                {c.respostas.length > 0 && (
-                                  <TableCell className="text-right tabular-nums">
-                                    {melhor ? (
-                                      <>
-                                        {fmtValor(melhor.preco)}
-                                        <div className="text-xs text-muted-foreground">{melhor.fornecedor}</div>
-                                      </>
-                                    ) : "—"}
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
+                    <ItensHistorico cotacao={c} />
                   </article>
                 ))}
               </div>
