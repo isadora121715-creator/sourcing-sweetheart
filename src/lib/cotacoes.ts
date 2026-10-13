@@ -153,6 +153,8 @@ export async function salvarRespostaCotacao(input: {
   cotacaoId: string;
   itens: ItemCotacao[];
 }): Promise<void> {
+  if (!input.itens.some((item) => item.precoUnitario !== null)) throw new Error("Informe ao menos um preço.");
+  if (input.itens.some((item) => item.precoUnitario !== null && (!Number.isFinite(item.precoUnitario) || item.precoUnitario < 0))) throw new Error("Os preços devem ser números maiores ou iguais a zero.");
   const atualizacoes = input.itens.map((item) => {
     if (!item.id) throw new Error("Item da cotação sem identificação.");
     return supabase
@@ -163,7 +165,8 @@ export async function salvarRespostaCotacao(input: {
         incoterm: item.incoterm || null,
         observacao_fornecedor: item.observacaoFornecedor || null,
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("cotacao_id", input.cotacaoId);
   });
 
   const resultados = await Promise.all(atualizacoes);

@@ -41,12 +41,13 @@ export type RespostaImportada = {
 };
 
 export async function importarRespostaFornecedor(file: File): Promise<RespostaImportada[]> {
+  if (file.size > 20 * 1024 * 1024) throw new Error("A planilha deve ter no máximo 20 MB.");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const firstSheet = wb.SheetNames[0];
   if (!firstSheet) throw new Error("A planilha não possui abas.");
   const ws = wb.Sheets[firstSheet];
   if (!ws) throw new Error("Não foi possível abrir a primeira aba.");
-  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: "", raw: false });
+  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: "", raw: true });
   const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell).trim() === "Unit Price"));
   if (headerIndex < 0) throw new Error("A coluna “Unit Price” não foi encontrada.");
   const header = rows[headerIndex]?.map((cell) => String(cell).trim()) ?? [];
@@ -54,20 +55,31 @@ export async function importarRespostaFornecedor(file: File): Promise<RespostaIm
   const required = ["Item", "Unit Price", "Delivery Time", "Incoterm", "Supplier Notes"];
   if (required.some((name) => col(name) < 0)) throw new Error("A planilha não tem todas as colunas do modelo enviado.");
 
-  return rows.slice(headerIndex + 1).flatMap((row) => {
+  const encontrados = new Set<number>();
+  const resposta = rows.slice(headerIndex + 1).flatMap((row) => {
     const item = Number(row[col("Item")]);
     if (!Number.isInteger(item) || item < 1) return [];
+    if (encontrados.has(item)) throw new Error(`O item ${item} está repetido na planilha.`);
+    encontrados.add(item);
     const rawPrice = String(row[col("Unit Price")] ?? "").trim();
-    const normalized = rawPrice.replace(/\s/g, "").replace(/(?=.*[,])\./g, "").replace(",", ".");
+    let normalized = rawPrice.replace(/\s/g, "");
+    if (normalized.includes(",") && normalized.includes(".")) {
+      normalized = normalized.lastIndexOf(",") > normalized.lastIndexOf(".")
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, "");
+    } else normalized = normalized.replace(",", ".");
     const parsedPrice = rawPrice === "" ? null : Number(normalized);
+    if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) throw new Error(`Preço inválido no item ${item}.`);
     return [{
       item,
-      precoUnitario: parsedPrice !== null && Number.isFinite(parsedPrice) ? parsedPrice : null,
+      precoUnitario: parsedPrice,
       prazoEntrega: String(row[col("Delivery Time")] ?? "").trim(),
       incoterm: String(row[col("Incoterm")] ?? "").trim(),
       observacaoFornecedor: String(row[col("Supplier Notes")] ?? "").trim(),
     }];
   });
+  if (!resposta.length) throw new Error("Nenhum item foi encontrado na planilha.");
+  return resposta;
 }
 
 /** Planilha editável enviada ao fornecedor (colunas de preço em branco). */
