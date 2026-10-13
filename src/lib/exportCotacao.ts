@@ -81,9 +81,21 @@ function normalizarCabecalho(texto: string | number): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    .replace(/[:.]+$/g, "")
+    .replace(/\([^)]*\)/g, " ") // "DESCRIPTION (HCI)" → "description"
+    .replace(/[:.]+\s*$/g, "")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/[:.]+$/g, "");
+}
+
+/**
+ * Índice da coluna cujo cabeçalho corresponde a um dos nomes. Primeiro procura o nome exato;
+ * com `aceitarPrefixo`, aceita também cabeçalhos que começam pelo nome (ex.: "qty pcs").
+ */
+function acharColuna(header: string[], nomes: string[], aceitarPrefixo = false): number {
+  const exata = header.findIndex((n) => nomes.includes(n));
+  if (exata >= 0 || !aceitarPrefixo) return exata;
+  return header.findIndex((n) => nomes.some((nome) => n.startsWith(`${nome} `) || n.startsWith(`${nome}/`)));
 }
 
 const NOMES_COLUNAS = {
@@ -103,28 +115,29 @@ export async function importarItensCotacao(file: File): Promise<CotacaoImportada
   const rows = await lerLinhasPlanilha(file);
   const headerIndex = rows.slice(0, 50).findIndex((row) => {
     const nomes = row.map(normalizarCabecalho);
-    return nomes.some((n) => NOMES_COLUNAS.material.includes(n)) && nomes.some((n) => NOMES_COLUNAS.quantidade.includes(n));
+    return acharColuna(nomes, NOMES_COLUNAS.material, true) >= 0 && acharColuna(nomes, NOMES_COLUNAS.quantidade, true) >= 0;
   });
-  if (headerIndex < 0) throw new Error("Não encontrei as colunas de material e quantidade na planilha.");
+  if (headerIndex < 0) {
+    throw new Error("Não encontrei as colunas de material e quantidade na planilha. Use cabeçalhos como “Description” ou “Material” e “Qty” ou “Quantidade”.");
+  }
   const header = rows[headerIndex]!.map(normalizarCabecalho);
-  const col = (nomes: string[]) => header.findIndex((n) => nomes.includes(n));
   const colunas = {
-    material: col(NOMES_COLUNAS.material),
-    quantidade: col(NOMES_COLUNAS.quantidade),
-    codigo: col(NOMES_COLUNAS.codigo),
-    unidade: col(NOMES_COLUNAS.unidade),
-    categoria: col(NOMES_COLUNAS.categoria),
-    observacao: col(NOMES_COLUNAS.observacao),
+    material: acharColuna(header, NOMES_COLUNAS.material, true),
+    quantidade: acharColuna(header, NOMES_COLUNAS.quantidade, true),
+    codigo: acharColuna(header, NOMES_COLUNAS.codigo),
+    unidade: acharColuna(header, NOMES_COLUNAS.unidade),
+    categoria: acharColuna(header, NOMES_COLUNAS.categoria),
+    observacao: acharColuna(header, NOMES_COLUNAS.observacao),
   };
   const texto = (row: (string | number)[], idx: number) => (idx < 0 ? "" : String(row[idx] ?? "").trim());
 
   const itens: ItemCotacao[] = [];
-  rows.slice(headerIndex + 1).forEach((row, offset) => {
+  rows.slice(headerIndex + 1).forEach((row) => {
     const material = texto(row, colunas.material);
     if (!material || ["grand total", "total", "total geral"].includes(normalizarCabecalho(material))) return;
     const quantidade = parseNumero(row[colunas.quantidade]);
     if (quantidade === null || Number.isNaN(quantidade) || quantidade <= 0) {
-      throw new Error(`Quantidade inválida na linha ${headerIndex + offset + 2} (${material}).`);
+      throw new Error(`Quantidade inválida para o material “${material}”.`);
     }
     const categoriaInformada = CATEGORIAS_MATERIAL.find(
       (c) => normalizarCabecalho(c) === normalizarCabecalho(texto(row, colunas.categoria)),
