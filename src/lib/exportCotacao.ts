@@ -173,12 +173,52 @@ export function exportPlanilhaPrecos(info: Cabecalho, itens: ItemCotacao[]) {
   XLSX.writeFile(wb, `supplier_response_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+/** Planilha comparando o preço unitário de cada fornecedor, item a item. */
+export function exportPlanilhaComparativo(cotacao: Cotacao) {
+  const wb = XLSX.utils.book_new();
+  const respostas = cotacao.respostas;
+  const aoa: (string | number)[][] = [
+    ["SUPPLIER PRICE COMPARISON"],
+    ["Subject:", cotacao.assunto],
+    ["Sent date:", fmtExportDate(cotacao.data_envio)],
+    [],
+    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", ...respostas.map((r) => `${r.fornecedor} — Unit Price`), "Best Price", "Best Supplier"],
+  ];
+  cotacao.itens.forEach((item, idx) => {
+    const precos = respostas.map((r) => (item.id ? r.precos[item.id]?.precoUnitario ?? null : null));
+    const validos = precos.flatMap((p, i) => (p === null ? [] : [{ preco: p, fornecedor: respostas[i]!.fornecedor }]));
+    const melhor = validos.reduce<{ preco: number; fornecedor: string } | null>((m, v) => (m === null || v.preco < m.preco ? v : m), null);
+    aoa.push([
+      idx + 1,
+      item.codigo || "",
+      item.material,
+      categoryLabel(item),
+      item.unidade,
+      item.quantidade,
+      ...precos.map((p) => p ?? ""),
+      melhor?.preco ?? "",
+      melhor?.fornecedor ?? "",
+    ]);
+  });
+  aoa.push([]);
+  aoa.push([
+    "", "", "GRAND TOTAL", "", "", "",
+    ...respostas.map((r) =>
+      cotacao.itens.reduce((total, item) => total + item.quantidade * ((item.id ? r.precos[item.id]?.precoUnitario : null) ?? 0), 0),
+    ),
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 50 }, { wch: 20 }, { wch: 6 }, { wch: 8 }, ...respostas.map(() => ({ wch: 22 })), { wch: 14 }, { wch: 24 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Comparison");
+  XLSX.writeFile(wb, `comparison_${slug(cotacao.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 /** Planilha de histórico: assunto, data enviada, materiais e quantidades. */
 export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
   const wb = XLSX.utils.book_new();
 
   const resumo = [
-    ["Subject", "Supplier", "Sent Date", "Reply Due", "Items", "Total Quantity", "Status"],
+    ["Subject", "Supplier", "Sent Date", "Reply Due", "Items", "Total Quantity", "Status", "Responses"],
     ...cotacoes.map((c) => [
       c.assunto,
       c.fornecedor || "",
@@ -187,10 +227,11 @@ export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
       c.itens.length,
       c.itens.reduce((s, i) => s + i.quantidade, 0),
       c.status,
+      c.respostas.map((r) => r.fornecedor).join(", "),
     ]),
   ];
   const wsResumo = XLSX.utils.aoa_to_sheet(resumo);
-  wsResumo["!cols"] = [{ wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 12 }];
+  wsResumo["!cols"] = [{ wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 40 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Quotations");
 
   const detalhe = [

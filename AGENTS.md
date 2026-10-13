@@ -10,4 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Store each quotation item category as one of Flange, Junta (Gasket), Forjadinho, or Tubular; this keeps history and exports consistently classified.
-- Persist supplier response fields on quotation items and import spreadsheet rows by validated item number; this preserves the original material and quantity.
+- Store supplier prices per supplier in cotacao_respostas / cotacao_resposta_itens (the price columns on cotacao_itens are deprecated) and import spreadsheet rows by validated item number; this preserves the original material and quantity and lets one quotation be compared across suppliers.

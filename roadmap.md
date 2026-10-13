@@ -7,3 +7,4 @@
 - [x] Verify compilation and generated document layouts.
 - [x] Add supplier price return by email attachment, uploaded spreadsheet, or manual entry.
 - [x] Allow downloading the completed supplier quotation prices.
+- [x] Register price responses from multiple suppliers per quotation, with best-price view and comparison spreadsheet.
