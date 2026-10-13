@@ -73,6 +73,80 @@ export type Database = {
           },
         ]
       }
+      cotacao_resposta_itens: {
+        Row: {
+          id: string
+          incoterm: string | null
+          item_id: string
+          observacao_fornecedor: string | null
+          prazo_entrega: string | null
+          preco_unitario: number | null
+          resposta_id: string
+        }
+        Insert: {
+          id?: string
+          incoterm?: string | null
+          item_id: string
+          observacao_fornecedor?: string | null
+          prazo_entrega?: string | null
+          preco_unitario?: number | null
+          resposta_id: string
+        }
+        Update: {
+          id?: string
+          incoterm?: string | null
+          item_id?: string
+          observacao_fornecedor?: string | null
+          prazo_entrega?: string | null
+          preco_unitario?: number | null
+          resposta_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacao_resposta_itens_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "cotacao_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cotacao_resposta_itens_resposta_id_fkey"
+            columns: ["resposta_id"]
+            isOneToOne: false
+            referencedRelation: "cotacao_respostas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cotacao_respostas: {
+        Row: {
+          cotacao_id: string
+          created_at: string
+          fornecedor: string
+          id: string
+        }
+        Insert: {
+          cotacao_id: string
+          created_at?: string
+          fornecedor: string
+          id?: string
+        }
+        Update: {
+          cotacao_id?: string
+          created_at?: string
+          fornecedor?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacao_respostas_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cotacoes: {
         Row: {
           assunto: string
