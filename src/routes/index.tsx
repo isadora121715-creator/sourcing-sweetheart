@@ -54,6 +54,7 @@ import {
   exportPlanilhaFornecedor,
   exportPlanilhaHistorico,
   exportPlanilhaPrecos,
+  importarItensCotacao,
   importarRespostaFornecedor,
   fmtData,
 } from "@/lib/exportCotacao";
@@ -242,6 +243,7 @@ function CotacaoPage() {
   const [fornecedorResposta, setFornecedorResposta] = useState("");
   const [itensResposta, setItensResposta] = useState<ItemCotacao[]>([]);
   const arquivoRef = useRef<HTMLInputElement>(null);
+  const planilhaMateriaisRef = useRef<HTMLInputElement>(null);
 
   const { data: cotacoes = [], isLoading } = useQuery({
     queryKey: ["cotacoes"],
@@ -299,7 +301,8 @@ function CotacaoPage() {
 
   async function importarArquivo(file: File) {
     try {
-      const resposta = await importarRespostaFornecedor(file);
+      const { fornecedor: fornecedorPlanilha, itens: resposta } = await importarRespostaFornecedor(file);
+      if (fornecedorPlanilha && !fornecedorResposta.trim()) setFornecedorResposta(fornecedorPlanilha);
       if (resposta.some((linha) => linha.item > itensResposta.length)) throw new Error("A planilha contém itens que não existem nesta cotação.");
       setItensResposta((prev) => prev.map((item, idx) => {
         const importado = resposta.find((linha) => linha.item === idx + 1);
@@ -309,6 +312,26 @@ function CotacaoPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível ler a planilha.");
     }
+  }
+
+  async function importarPlanilhaMateriais(file: File) {
+    try {
+      const importada = await importarItensCotacao(file);
+      if (itensValidos.length > 0 && !window.confirm("Substituir os materiais já digitados pelos da planilha?")) return;
+      setItens(importada.itens);
+      if (importada.assunto && !assunto.trim()) setAssunto(importada.assunto);
+      if (importada.fornecedor && !fornecedor.trim()) setFornecedor(importada.fornecedor);
+      if (importada.observacoes && !observacoes.trim()) setObservacoes(importada.observacoes);
+      toast.success(`${importada.itens.length} material(is) importado(s). Confira e gere a cotação.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível ler a planilha.");
+    }
+  }
+
+  function gerarArquivo(geracao: Promise<void>) {
+    geracao.catch((error: unknown) =>
+      toast.error(error instanceof Error ? `Não foi possível gerar o arquivo: ${error.message}` : "Não foi possível gerar o arquivo."),
+    );
   }
 
   const itensValidos = itens.filter((i) => i.material.trim() !== "");
@@ -425,10 +448,24 @@ function CotacaoPage() {
             <section className="rounded-lg border bg-card shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
                 <h2 className="text-sm font-semibold">Materiais da cotação</h2>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                   <span>
                     {itensValidos.length} material(is) · {totalPecas} peça(s)
                   </span>
+                  <input
+                    ref={planilhaMateriaisRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void importarPlanilhaMateriais(file);
+                      event.target.value = "";
+                    }}
+                  />
+                  <Button size="sm" variant="outline" onClick={() => planilhaMateriaisRef.current?.click()}>
+                    <Upload className="mr-1 h-4 w-4" /> Importar planilha de materiais
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => setItens((p) => [...p, linhaVazia(p.length)])}>
                     <Plus className="mr-1 h-4 w-4" /> Adicionar linha
                   </Button>
@@ -529,7 +566,7 @@ function CotacaoPage() {
                 <Button
                   onClick={() => {
                     if (!validar()) return;
-                    exportPlanilhaFornecedor(info, itensValidos);
+                    gerarArquivo(exportPlanilhaFornecedor(info, itensValidos));
                   }}
                 >
                   <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Gerar planilha para fornecedor
@@ -538,7 +575,7 @@ function CotacaoPage() {
                   variant="secondary"
                   onClick={() => {
                     if (!validar()) return;
-                    exportPdfEditavel(info, itensValidos);
+                    gerarArquivo(exportPdfEditavel(info, itensValidos));
                   }}
                 >
                   <FileDown className="mr-1.5 h-4 w-4" /> Gerar PDF editável
@@ -611,7 +648,7 @@ function CotacaoPage() {
                           size="sm"
                           variant="outline"
                           onClick={() =>
-                            exportPlanilhaFornecedor(
+                            gerarArquivo(exportPlanilhaFornecedor(
                               {
                                 assunto: c.assunto,
                                 fornecedor: c.fornecedor,
@@ -620,7 +657,7 @@ function CotacaoPage() {
                                 dataEnvio: c.data_envio,
                               },
                               c.itens,
-                            )
+                            ))
                           }
                         >
                           <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Planilha
@@ -629,7 +666,7 @@ function CotacaoPage() {
                           size="sm"
                           variant="outline"
                           onClick={() =>
-                            exportPdfEditavel(
+                            gerarArquivo(exportPdfEditavel(
                               {
                                 assunto: c.assunto,
                                 fornecedor: c.fornecedor,
@@ -638,7 +675,7 @@ function CotacaoPage() {
                                 dataEnvio: c.data_envio,
                               },
                               c.itens,
-                            )
+                            ))
                           }
                         >
                           <FileDown className="mr-1.5 h-4 w-4" /> PDF

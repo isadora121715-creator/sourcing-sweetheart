@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import jsPDF, { AcroFormTextField } from "jspdf";
-import type { Cotacao, ItemCotacao } from "@/lib/cotacoes";
+import { CATEGORIAS_MATERIAL, identificarCategoria, type Cotacao, type ItemCotacao } from "@/lib/cotacoes";
 
 export function fmtData(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR");
@@ -40,14 +40,122 @@ export type RespostaImportada = {
   observacaoFornecedor: string;
 };
 
-export async function importarRespostaFornecedor(file: File): Promise<RespostaImportada[]> {
+async function lerLinhasPlanilha(file: File): Promise<(string | number)[][]> {
   if (file.size > 20 * 1024 * 1024) throw new Error("A planilha deve ter no máximo 20 MB.");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const firstSheet = wb.SheetNames[0];
   if (!firstSheet) throw new Error("A planilha não possui abas.");
   const ws = wb.Sheets[firstSheet];
   if (!ws) throw new Error("Não foi possível abrir a primeira aba.");
-  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: "", raw: true });
+  return XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: "", raw: true });
+}
+
+/** Valor da coluna B na linha cujo rótulo (coluna A) é `rotulo`, ex.: "Supplier:". */
+function valorDoRotulo(rows: (string | number)[][], rotulo: string): string {
+  const linha = rows.find((row) => String(row[0] ?? "").trim().toLowerCase() === rotulo.toLowerCase());
+  return String(linha?.[1] ?? "").trim();
+}
+
+function parseNumero(valor: string | number | undefined): number | null {
+  const bruto = String(valor ?? "").trim();
+  if (bruto === "") return null;
+  let normalizado = bruto.replace(/\s/g, "");
+  if (normalizado.includes(",") && normalizado.includes(".")) {
+    normalizado = normalizado.lastIndexOf(",") > normalizado.lastIndexOf(".")
+      ? normalizado.replace(/\./g, "").replace(",", ".")
+      : normalizado.replace(/,/g, "");
+  } else normalizado = normalizado.replace(",", ".");
+  const numero = Number(normalizado);
+  return Number.isFinite(numero) ? numero : NaN;
+}
+
+export type CotacaoImportada = {
+  assunto: string;
+  fornecedor: string;
+  observacoes: string;
+  itens: ItemCotacao[];
+};
+
+function normalizarCabecalho(texto: string | number): string {
+  return String(texto)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[:.]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const NOMES_COLUNAS = {
+  material: ["material / description", "material / descricao", "material", "descricao", "description", "descricao do material", "item description", "produto"],
+  quantidade: ["qty", "qtd", "qtde", "quantidade", "quantity", "quant"],
+  codigo: ["code", "codigo", "cod", "part number", "pn"],
+  unidade: ["unit", "un", "unid", "unidade", "uom"],
+  categoria: ["category", "categoria"],
+  observacao: ["observacao", "observacoes", "obs", "notes", "note"],
+};
+
+/**
+ * Lê uma planilha com a lista de materiais (a planilha de cotação da HCI ou qualquer
+ * planilha com colunas de material e quantidade) para montar uma nova cotação.
+ */
+export async function importarItensCotacao(file: File): Promise<CotacaoImportada> {
+  const rows = await lerLinhasPlanilha(file);
+  const headerIndex = rows.slice(0, 50).findIndex((row) => {
+    const nomes = row.map(normalizarCabecalho);
+    return nomes.some((n) => NOMES_COLUNAS.material.includes(n)) && nomes.some((n) => NOMES_COLUNAS.quantidade.includes(n));
+  });
+  if (headerIndex < 0) throw new Error("Não encontrei as colunas de material e quantidade na planilha.");
+  const header = rows[headerIndex]!.map(normalizarCabecalho);
+  const col = (nomes: string[]) => header.findIndex((n) => nomes.includes(n));
+  const colunas = {
+    material: col(NOMES_COLUNAS.material),
+    quantidade: col(NOMES_COLUNAS.quantidade),
+    codigo: col(NOMES_COLUNAS.codigo),
+    unidade: col(NOMES_COLUNAS.unidade),
+    categoria: col(NOMES_COLUNAS.categoria),
+    observacao: col(NOMES_COLUNAS.observacao),
+  };
+  const texto = (row: (string | number)[], idx: number) => (idx < 0 ? "" : String(row[idx] ?? "").trim());
+
+  const itens: ItemCotacao[] = [];
+  rows.slice(headerIndex + 1).forEach((row, offset) => {
+    const material = texto(row, colunas.material);
+    if (!material || ["grand total", "total", "total geral"].includes(normalizarCabecalho(material))) return;
+    const quantidade = parseNumero(row[colunas.quantidade]);
+    if (quantidade === null || Number.isNaN(quantidade) || quantidade <= 0) {
+      throw new Error(`Quantidade inválida na linha ${headerIndex + offset + 2} (${material}).`);
+    }
+    const categoriaInformada = CATEGORIAS_MATERIAL.find(
+      (c) => normalizarCabecalho(c) === normalizarCabecalho(texto(row, colunas.categoria)),
+    );
+    itens.push({
+      ordem: itens.length,
+      material,
+      codigo: texto(row, colunas.codigo),
+      unidade: texto(row, colunas.unidade) || "PC",
+      quantidade,
+      observacao: texto(row, colunas.observacao),
+      categoria: categoriaInformada ?? identificarCategoria(material),
+      precoUnitario: null,
+      prazoEntrega: "",
+      incoterm: "",
+      observacaoFornecedor: "",
+    });
+  });
+  if (!itens.length) throw new Error("Nenhum material foi encontrado na planilha.");
+
+  return {
+    assunto: valorDoRotulo(rows, "Subject:") || valorDoRotulo(rows, "Assunto:"),
+    fornecedor: valorDoRotulo(rows, "Supplier:") || valorDoRotulo(rows, "Fornecedor:"),
+    observacoes: valorDoRotulo(rows, "Notes:") || valorDoRotulo(rows, "Observações:"),
+    itens,
+  };
+}
+
+/** Lê a planilha devolvida pelo fornecedor: nome do fornecedor e preços por item. */
+export async function importarRespostaFornecedor(file: File): Promise<{ fornecedor: string; itens: RespostaImportada[] }> {
+  const rows = await lerLinhasPlanilha(file);
   const headerIndex = rows.findIndex((row) => row.some((cell) => String(cell).trim() === "Unit Price"));
   if (headerIndex < 0) throw new Error("A coluna “Unit Price” não foi encontrada.");
   const header = rows[headerIndex]?.map((cell) => String(cell).trim()) ?? [];
@@ -61,14 +169,7 @@ export async function importarRespostaFornecedor(file: File): Promise<RespostaIm
     if (!Number.isInteger(item) || item < 1) return [];
     if (encontrados.has(item)) throw new Error(`O item ${item} está repetido na planilha.`);
     encontrados.add(item);
-    const rawPrice = String(row[col("Unit Price")] ?? "").trim();
-    let normalized = rawPrice.replace(/\s/g, "");
-    if (normalized.includes(",") && normalized.includes(".")) {
-      normalized = normalized.lastIndexOf(",") > normalized.lastIndexOf(".")
-        ? normalized.replace(/\./g, "").replace(",", ".")
-        : normalized.replace(/,/g, "");
-    } else normalized = normalized.replace(",", ".");
-    const parsedPrice = rawPrice === "" ? null : Number(normalized);
+    const parsedPrice = parseNumero(row[col("Unit Price")]);
     if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) throw new Error(`Preço inválido no item ${item}.`);
     return [{
       item,
@@ -79,75 +180,155 @@ export async function importarRespostaFornecedor(file: File): Promise<RespostaIm
     }];
   });
   if (!resposta.length) throw new Error("Nenhum item foi encontrado na planilha.");
-  return resposta;
+  return { fornecedor: valorDoRotulo(rows, "Supplier:"), itens: resposta };
 }
 
-/** Planilha editável enviada ao fornecedor (colunas de preço em branco). */
-export function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) {
-  const wb = XLSX.utils.book_new();
+const LOGO_URL = "/hci-logo.png";
+const LOGO_RATIO = 950 / 590; // largura / altura do arquivo do logo
+let logoCache: Promise<Uint8Array> | null = null;
+
+function carregarLogo(): Promise<Uint8Array> {
+  logoCache ??= fetch(LOGO_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error("Não foi possível carregar o logo da HCI.");
+      return res.arrayBuffer();
+    })
+    .then((buffer) => new Uint8Array(buffer))
+    .catch((error) => {
+      logoCache = null;
+      throw error;
+    });
+  return logoCache;
+}
+
+function baixarArquivo(conteudo: BlobPart, tipo: string, nome: string) {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Planilha editável enviada ao fornecedor, no layout do modelo da HCI:
+ * título azul, logo, instruções em amarelo e células rosa para o fornecedor preencher.
+ */
+export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotacao[]) {
+  const [{ default: ExcelJS }, logo] = await Promise.all([import("exceljs"), carregarLogo()]);
+  const AZUL = "FF1F4E78";
+  const ROSA = "FFFCE4EC";
+  const AMARELO = "FFFFF2CC";
+  const borda = { style: "thin" as const, color: { argb: "FF999999" } };
+  const bordas = { top: borda, left: borda, bottom: borda, right: borda };
+  const fonte = { name: "Calibri", size: 12 };
   const dataEnvio = info.dataEnvio ? fmtExportDate(info.dataEnvio) : new Date().toLocaleDateString("en-GB");
 
-  const aoa: (string | number)[][] = [
-    ["REQUEST FOR QUOTATION"],
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Quotation");
+  ws.columns = [9.375, 16.875, 50.875, 20.875, 6.875, 8.875, 14.875, 14.875, 16.875, 16.875, 28.875].map((width) => ({ width }));
+
+  ws.mergeCells("A1:K1");
+  const titulo = ws.getCell("A1");
+  titulo.value = "REQUEST FOR QUOTATION";
+  titulo.font = { name: "Calibri", size: 16, bold: true, color: { argb: "FFFFFFFF" } };
+  titulo.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AZUL } };
+  titulo.alignment = { vertical: "middle" };
+  ws.getRow(1).height = 21;
+
+  const cabecalho: [string, string][] = [
     ["Subject:", info.assunto],
     ["Supplier:", info.fornecedor || ""],
     ["Sent date:", dataEnvio],
     ["Reply due:", info.prazoResposta ? fmtExportDate(info.prazoResposta) : ""],
     ["Notes:", info.observacoes || ""],
-    [],
-    ["Please complete the Unit Price, Delivery Time, Incoterm and Supplier Notes columns."],
-    [],
-    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"],
   ];
+  cabecalho.forEach(([rotulo, valor], idx) => {
+    const linha = ws.getRow(idx + 2);
+    linha.getCell(1).value = rotulo;
+    linha.getCell(1).font = fonte;
+    linha.getCell(2).value = valor;
+    linha.getCell(2).font = fonte;
+  });
+  // Nome do fornecedor: célula rosa para ele preencher quando não foi informado.
+  const celulaFornecedor = ws.getCell("B3");
+  celulaFornecedor.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ROSA } };
+  celulaFornecedor.border = bordas;
 
-  const headerRow = aoa.length; // 0-based index da linha de cabeçalho
+  let logoBinario = "";
+  logo.forEach((byte) => (logoBinario += String.fromCharCode(byte)));
+  const logoId = wb.addImage({ base64: btoa(logoBinario), extension: "png" });
+  ws.addImage(logoId, { tl: { col: 10.15, row: 1.1 }, ext: { width: 150, height: 150 / LOGO_RATIO } });
+
+  ws.mergeCells("A8:K8");
+  const instrucoes = ws.getCell("A8");
+  instrucoes.value =
+    "SUPPLIER INSTRUCTIONS: Fill ONLY the pink cells. Do not change item descriptions or quantities. Inform Unit Price, Delivery Time, Incoterm and Supplier Notes.";
+  instrucoes.font = fonte;
+  instrucoes.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AMARELO } };
+
+  const linhaCabecalho = 10;
+  const cab = ws.getRow(linhaCabecalho);
+  ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"].forEach(
+    (texto, idx) => {
+      const cell = cab.getCell(idx + 1);
+      cell.value = texto;
+      cell.font = { name: "Calibri", size: 12, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AZUL } };
+      cell.border = bordas;
+      cell.alignment = { vertical: "middle", wrapText: true };
+    },
+  );
+
+  const COLUNAS_FORNECEDOR = [7, 9, 10, 11];
   itens.forEach((item, idx) => {
-    const line = headerRow + idx + 1; // linha da planilha (1-based)
-    aoa.push([
+    const numero = linhaCabecalho + idx + 1;
+    const linha = ws.getRow(numero);
+    linha.values = [
       idx + 1,
       item.codigo || "",
       item.material,
       categoryLabel(item),
       item.unidade,
       item.quantidade,
-      "",
-      { t: "n", f: `IF(G${line}="","",F${line}*G${line})` } as unknown as string,
-      "",
-      "",
-      item.observacao || "",
-    ]);
+      null,
+      { formula: `IF(G${numero}="","",F${numero}*G${numero})` },
+      null,
+      null,
+      item.observacao || null,
+    ];
+    for (let col = 1; col <= 11; col++) {
+      const cell = linha.getCell(col);
+      cell.font = fonte;
+      cell.border = bordas;
+      cell.alignment = { vertical: "middle", wrapText: true };
+      if (COLUNAS_FORNECEDOR.includes(col)) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ROSA } };
+    }
+    linha.getCell(7).numFmt = "#,##0.00";
+    linha.getCell(8).numFmt = "#,##0.00";
   });
 
-  aoa.push([]);
-  aoa.push([
-    "",
-    "",
-    "GRAND TOTAL",
-    "",
-    "",
-    "",
-    "",
-    { t: "n", f: `SUM(H${headerRow + 1}:H${headerRow + itens.length})` } as unknown as string,
-    "",
-    "",
-  ]);
+  const linhaVazia = linhaCabecalho + itens.length + 1;
+  const linhaTotal = linhaVazia + 1;
+  for (let col = 1; col <= 11; col++) {
+    ws.getRow(linhaVazia).getCell(col).border = bordas;
+    const cell = ws.getRow(linhaTotal).getCell(col);
+    cell.border = bordas;
+    cell.font = fonte;
+  }
+  ws.getCell(`C${linhaTotal}`).value = "GRAND TOTAL";
+  ws.getCell(`C${linhaTotal}`).font = { ...fonte, bold: true };
+  const total = ws.getCell(`H${linhaTotal}`);
+  total.value = { formula: `SUM(H${linhaCabecalho + 1}:H${linhaCabecalho + itens.length})` };
+  total.numFmt = "#,##0.00";
+  total.font = { ...fonte, bold: true };
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [
-    { wch: 6 },
-    { wch: 16 },
-    { wch: 50 },
-    { wch: 20 },
-    { wch: 6 },
-    { wch: 8 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 16 },
-    { wch: 28 },
-  ];
-  XLSX.utils.book_append_sheet(wb, ws, "Quotation");
-  XLSX.writeFile(wb, `quotation_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const buffer = await wb.xlsx.writeBuffer();
+  baixarArquivo(
+    new Uint8Array(buffer),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    `quotation_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
 }
 
 /** Planilha preenchida com a resposta recebida do fornecedor. */
@@ -270,7 +451,8 @@ export function exportPlanilhaHistorico(cotacoes: Cotacao[]) {
 }
 
 /** PDF editável (campos de formulário) para o fornecedor preencher os preços. */
-export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
+export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
+  const logo = await carregarLogo();
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -295,13 +477,20 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   const drawHeaderBar = () => {
     doc.setFillColor(...BLUE);
     doc.rect(0, 0, pageW, 20, "F");
+    // Logo da HCI sobre um fundo branco, ao lado do título.
+    const logoH = 14;
+    const logoW = logoH * LOGO_RATIO;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(left - 2, 2, logoW + 4, logoH + 2, 1.5, 1.5, "F");
+    doc.addImage(logo, "PNG", left, 3, logoW, logoH);
+    const textLeft = left + logoW + 6;
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("REQUEST FOR QUOTATION", left, 9);
+    doc.text("REQUEST FOR QUOTATION", textLeft, 9);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text(`Subject: ${info.assunto}`, left, 15.5);
+    doc.text(`Subject: ${info.assunto}`, textLeft, 15.5);
     doc.setFontSize(8);
     doc.text(`Sent: ${dataEnvio}`, pageW - left, 9, { align: "right" });
     if (info.prazoResposta) {
@@ -330,10 +519,16 @@ export function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
   doc.setTextColor(60, 60, 60);
   doc.setFontSize(8.5);
-  if (info.fornecedor) {
-    doc.text(`Supplier: ${info.fornecedor}`, left, y);
-    y += 5;
-  }
+  // Nome do fornecedor: campo editável, já preenchido quando informado na cotação.
+  y += 1;
+  doc.text("Supplier:", left, y);
+  const supplierField = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };
+  supplierField.fieldName = "supplier_name";
+  supplierField.Rect = [left + 15, y - 4.2, 100, 6];
+  supplierField.fontSize = 9;
+  supplierField.value = info.fornecedor || "";
+  doc.addField(supplierField);
+  y += 6;
   if (info.observacoes) {
     const lines = doc.splitTextToSize(`Notes: ${info.observacoes}`, pageW - left * 2);
     doc.text(lines, left, y);
