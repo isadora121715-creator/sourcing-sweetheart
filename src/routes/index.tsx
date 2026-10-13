@@ -541,10 +541,10 @@ function CotacaoPage() {
                 <TableRow key={item.id ?? idx}>
                   <TableCell>{idx + 1}</TableCell>
                   <TableCell><div className="min-w-48 font-medium">{item.material}</div><div className="text-xs text-muted-foreground">{item.quantidade} {item.unidade}</div></TableCell>
-                  <TableCell><Input aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
-                  <TableCell><Input aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
-                  <TableCell><Input aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
-                  <TableCell><Input aria-label={`Observação do fornecedor do item ${idx + 1}`} value={item.observacaoFornecedor} onChange={(e) => atualizarResposta(idx, { observacaoFornecedor: e.target.value })} /></TableCell>
+                  <TableCell><Input className="min-w-28" aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
+                  <TableCell><Input className="min-w-32" aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
+                  <TableCell><Input className="min-w-24" aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
+                  <TableCell><Input className="min-w-48" aria-label={`Observação do fornecedor do item ${idx + 1}`} value={item.observacaoFornecedor} onChange={(e) => atualizarResposta(idx, { observacaoFornecedor: e.target.value })} /></TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>
