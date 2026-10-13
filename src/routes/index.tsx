@@ -135,9 +135,10 @@ function CotacaoPage() {
   async function importarArquivo(file: File) {
     try {
       const resposta = await importarRespostaFornecedor(file);
+      if (resposta.some((linha) => linha.item > itensResposta.length)) throw new Error("A planilha contém itens que não existem nesta cotação.");
       setItensResposta((prev) => prev.map((item, idx) => {
         const importado = resposta.find((linha) => linha.item === idx + 1);
-        return importado ? { ...item, ...importado } : item;
+        return importado ? { ...item, precoUnitario: importado.precoUnitario, prazoEntrega: importado.prazoEntrega, incoterm: importado.incoterm, observacaoFornecedor: importado.observacaoFornecedor } : item;
       }));
       toast.success(`${resposta.length} item(ns) importado(s). Confira antes de salvar.`);
     } catch (error) {
@@ -484,7 +485,7 @@ function CotacaoPage() {
                     </div>
 
                     {c.itens.some((item) => item.precoUnitario !== null) && (
-                      <div className="mt-3 flex items-center gap-2 border-y py-2 text-sm">
+                      <div className="mt-3 flex flex-wrap items-center gap-2 border-y py-2 text-sm">
                         <Badge>Respondida</Badge>
                         <span className="text-muted-foreground">Valor total recebido:</span>
                         <strong className="tabular-nums">{c.itens.reduce((total, item) => total + item.quantidade * (item.precoUnitario ?? 0), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
@@ -526,7 +527,7 @@ function CotacaoPage() {
       </main>
 
       <Dialog open={cotacaoResposta !== null} onOpenChange={(open) => !open && setCotacaoResposta(null)}>
-        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] max-w-6xl overflow-y-auto">
           <DialogHeader><DialogTitle>Registrar preços do fornecedor</DialogTitle><DialogDescription>{cotacaoResposta?.assunto}</DialogDescription></DialogHeader>
           <div className="flex flex-wrap items-center gap-2">
             <input ref={arquivoRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importarArquivo(file); event.target.value = ""; }} />
@@ -540,10 +541,10 @@ function CotacaoPage() {
                 <TableRow key={item.id ?? idx}>
                   <TableCell>{idx + 1}</TableCell>
                   <TableCell><div className="min-w-48 font-medium">{item.material}</div><div className="text-xs text-muted-foreground">{item.quantidade} {item.unidade}</div></TableCell>
-                  <TableCell><Input aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
-                  <TableCell><Input aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
-                  <TableCell><Input aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
-                  <TableCell><Input aria-label={`Observação do fornecedor do item ${idx + 1}`} value={item.observacaoFornecedor} onChange={(e) => atualizarResposta(idx, { observacaoFornecedor: e.target.value })} /></TableCell>
+                  <TableCell><Input className="min-w-28" aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
+                  <TableCell><Input className="min-w-32" aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
+                  <TableCell><Input className="min-w-24" aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
+                  <TableCell><Input className="min-w-48" aria-label={`Observação do fornecedor do item ${idx + 1}`} value={item.observacaoFornecedor} onChange={(e) => atualizarResposta(idx, { observacaoFornecedor: e.target.value })} /></TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>
