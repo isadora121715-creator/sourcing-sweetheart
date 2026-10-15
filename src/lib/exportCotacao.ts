@@ -472,20 +472,33 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   const BLUE: [number, number, number] = [29, 78, 216];
   const dataEnvio = info.dataEnvio ? fmtExportDate(info.dataEnvio) : new Date().toLocaleDateString("en-GB");
 
+  // Larguras somam 281 mm (A4 paisagem menos 8 mm de margem de cada lado).
   const cols = [
-    { label: "Item", w: 12 },
-    { label: "Code", w: 22 },
-    { label: "Material / Description", w: 64 },
-    { label: "Category", w: 27 },
-    { label: "Unit", w: 11 },
-    { label: "Qty", w: 14 },
-    { label: "Unit Price", w: 27 },
-    { label: "Delivery Time", w: 29 },
-    { label: "Incoterm", w: 28 },
-    { label: "Supplier Notes", w: 36 },
+    { label: "Item", w: 10 },
+    { label: "Code", w: 34 },
+    { label: "Material / Description", w: 70 },
+    { label: "Category", w: 24 },
+    { label: "Unit", w: 10 },
+    { label: "Qty", w: 12 },
+    { label: "Unit Price", w: 26 },
+    { label: "Delivery Time", w: 27 },
+    { label: "Incoterm", w: 22 },
+    { label: "Supplier Notes", w: 46 },
   ];
+  const tableW = cols.reduce((s, c) => s + c.w, 0);
   const left = 8;
-  const rowH = 9;
+  const minRowH = 9;
+  const cellPad = 1.5;
+  const lineH = 3.4; // altura de cada linha de texto em fonte 8
+
+  /** Divisórias verticais entre as colunas, para as informações não se misturarem. */
+  const drawColumnLines = (y: number, h: number) => {
+    let x = left;
+    cols.slice(0, -1).forEach((c) => {
+      x += c.w;
+      doc.line(x, y, x, y + h);
+    });
+  };
 
   const drawHeaderBar = () => {
     doc.setFillColor(...BLUE);
@@ -513,13 +526,16 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
   const drawTableHead = (y: number) => {
     doc.setFillColor(...BLUE);
-    doc.rect(left, y, cols.reduce((s, c) => s + c.w, 0), 8, "F");
+    doc.rect(left, y, tableW, 8, "F");
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.2);
+    drawColumnLines(y, 8);
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     let x = left;
     cols.forEach((c) => {
-      doc.text(c.label, x + 1.5, y + 5.4);
+      doc.text(c.label, x + cellPad, y + 5.4);
       x += c.w;
     });
     doc.setTextColor(30, 30, 30);
@@ -554,6 +570,19 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   y = drawTableHead(y);
 
   itens.forEach((item, idx) => {
+    doc.setFontSize(8);
+    // Cada texto quebra dentro da largura da sua coluna; a linha cresce para caber tudo.
+    const cells: string[][] = [
+      String(idx + 1),
+      item.codigo || "—",
+      item.material,
+      categoryLabel(item),
+      item.unidade,
+      String(item.quantidade),
+    ].map((value, ci) => doc.splitTextToSize(value, cols[ci]!.w - cellPad * 2) as string[]);
+    const maxLines = Math.max(...cells.map((lines) => lines.length));
+    const rowH = Math.max(minRowH, maxLines * lineH + 3);
+
     if (y + rowH > pageH - 14) {
       doc.addPage();
       drawHeaderBar();
@@ -562,26 +591,19 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
     if (idx % 2 === 1) {
       doc.setFillColor(239, 246, 255);
-      doc.rect(left, y, cols.reduce((s, c) => s + c.w, 0), rowH, "F");
+      doc.rect(left, y, tableW, rowH, "F");
     }
     doc.setDrawColor(210, 215, 225);
     doc.setLineWidth(0.2);
-    doc.rect(left, y, cols.reduce((s, c) => s + c.w, 0), rowH);
+    doc.rect(left, y, tableW, rowH);
+    drawColumnLines(y, rowH);
 
     doc.setTextColor(30, 30, 30);
-    doc.setFontSize(8);
-    const descLines = doc.splitTextToSize(item.material, cols[2]!.w - 3).slice(0, 2);
-    const cells = [
-      String(idx + 1),
-      item.codigo || "—",
-      descLines,
-      categoryLabel(item),
-      item.unidade,
-      String(item.quantidade),
-    ];
     let x = left;
-    cells.forEach((value, ci) => {
-      doc.text(value as string | string[], x + 1.5, y + (ci === 2 && Array.isArray(value) && value.length > 1 ? 3.6 : 5.8));
+    cells.forEach((lines, ci) => {
+      // Centraliza o bloco de texto na altura da linha.
+      const firstBaseline = y + (rowH - lines.length * lineH) / 2 + lineH * 0.8;
+      lines.forEach((line, li) => doc.text(line, x + cellPad, firstBaseline + li * lineH));
       x += cols[ci]!.w;
     });
 
