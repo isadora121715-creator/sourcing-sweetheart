@@ -79,6 +79,7 @@ export type Database = {
           incoterm: string | null
           item_id: string
           observacao_fornecedor: string | null
+          peso_unitario: number | null
           prazo_entrega: string | null
           preco_unitario: number | null
           resposta_id: string
@@ -88,6 +89,7 @@ export type Database = {
           incoterm?: string | null
           item_id: string
           observacao_fornecedor?: string | null
+          peso_unitario?: number | null
           prazo_entrega?: string | null
           preco_unitario?: number | null
           resposta_id: string
@@ -97,6 +99,7 @@ export type Database = {
           incoterm?: string | null
           item_id?: string
           observacao_fornecedor?: string | null
+          peso_unitario?: number | null
           prazo_entrega?: string | null
           preco_unitario?: number | null
           resposta_id?: string

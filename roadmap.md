@@ -10,3 +10,4 @@
 - [x] Register price responses from multiple suppliers per quotation, with best-price view and comparison spreadsheet.
 - [x] Import a materials spreadsheet to build a new quotation automatically.
 - [x] HCI branded supplier spreadsheet (template layout + logo) and PDF (logo + editable supplier name).
+- [x] Unit Weight (U/W) column in the supplier PDF, spreadsheets and price responses.

@@ -32,9 +32,12 @@ type Cabecalho = {
   dataEnvio?: string;
 };
 
+const COL_PESO = "Unit Weight (U/W)";
+
 export type RespostaImportada = {
   item: number;
   precoUnitario: number | null;
+  pesoUnitario: number | null;
   prazoEntrega: string;
   incoterm: string;
   observacaoFornecedor: string;
@@ -151,6 +154,7 @@ export async function importarItensCotacao(file: File): Promise<CotacaoImportada
       observacao: texto(row, colunas.observacao),
       categoria: categoriaInformada ?? identificarCategoria(material),
       precoUnitario: null,
+      pesoUnitario: null,
       prazoEntrega: "",
       incoterm: "",
       observacaoFornecedor: "",
@@ -184,9 +188,13 @@ export async function importarRespostaFornecedor(file: File): Promise<{ forneced
     encontrados.add(item);
     const parsedPrice = parseNumero(row[col("Unit Price")]);
     if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) throw new Error(`Preço inválido no item ${item}.`);
+    // Planilhas enviadas antes da coluna de peso não têm "Unit Weight (U/W)".
+    const parsedWeight = col(COL_PESO) < 0 ? null : parseNumero(row[col(COL_PESO)]);
+    if (parsedWeight !== null && (!Number.isFinite(parsedWeight) || parsedWeight < 0)) throw new Error(`Peso unitário inválido no item ${item}.`);
     return [{
       item,
       precoUnitario: parsedPrice,
+      pesoUnitario: parsedWeight,
       prazoEntrega: String(row[col("Delivery Time")] ?? "").trim(),
       incoterm: String(row[col("Incoterm")] ?? "").trim(),
       observacaoFornecedor: String(row[col("Supplier Notes")] ?? "").trim(),
@@ -239,9 +247,9 @@ export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotac
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Quotation");
-  ws.columns = [9.375, 16.875, 50.875, 20.875, 6.875, 8.875, 14.875, 14.875, 16.875, 16.875, 28.875].map((width) => ({ width }));
+  ws.columns = [9.375, 16.875, 50.875, 20.875, 6.875, 8.875, 14.875, 14.875, 14.875, 16.875, 16.875, 28.875].map((width) => ({ width }));
 
-  ws.mergeCells("A1:K1");
+  ws.mergeCells("A1:L1");
   const titulo = ws.getCell("A1");
   titulo.value = "REQUEST FOR QUOTATION";
   titulo.font = { name: "Calibri", size: 16, bold: true, color: { argb: "FFFFFFFF" } };
@@ -271,18 +279,18 @@ export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotac
   let logoBinario = "";
   logo.forEach((byte) => (logoBinario += String.fromCharCode(byte)));
   const logoId = wb.addImage({ base64: btoa(logoBinario), extension: "png" });
-  ws.addImage(logoId, { tl: { col: 10.15, row: 1.1 }, ext: { width: 150, height: 150 / LOGO_RATIO } });
+  ws.addImage(logoId, { tl: { col: 11.15, row: 1.1 }, ext: { width: 150, height: 150 / LOGO_RATIO } });
 
-  ws.mergeCells("A8:K8");
+  ws.mergeCells("A8:L8");
   const instrucoes = ws.getCell("A8");
   instrucoes.value =
-    "SUPPLIER INSTRUCTIONS: Fill ONLY the pink cells. Do not change item descriptions or quantities. Inform Unit Price, Delivery Time, Incoterm and Supplier Notes.";
+    "SUPPLIER INSTRUCTIONS: Fill ONLY the pink cells. Do not change item descriptions or quantities. Inform Unit Weight (U/W), Unit Price, Delivery Time, Incoterm and Supplier Notes.";
   instrucoes.font = fonte;
   instrucoes.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AMARELO } };
 
   const linhaCabecalho = 10;
   const cab = ws.getRow(linhaCabecalho);
-  ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"].forEach(
+  ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", COL_PESO, "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"].forEach(
     (texto, idx) => {
       const cell = cab.getCell(idx + 1);
       cell.value = texto;
@@ -293,7 +301,9 @@ export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotac
     },
   );
 
-  const COLUNAS_FORNECEDOR = [7, 9, 10, 11];
+  // Colunas: F = Qty, G = U/W, H = Unit Price, I = Total.
+  const COLUNAS_FORNECEDOR = [7, 8, 10, 11, 12];
+  const TOTAL_COLUNAS = 12;
   itens.forEach((item, idx) => {
     const numero = linhaCabecalho + idx + 1;
     const linha = ws.getRow(numero);
@@ -305,25 +315,27 @@ export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotac
       item.unidade,
       item.quantidade,
       null,
-      { formula: `IF(G${numero}="","",F${numero}*G${numero})` },
+      null,
+      { formula: `IF(H${numero}="","",F${numero}*H${numero})` },
       null,
       null,
       item.observacao || null,
     ];
-    for (let col = 1; col <= 11; col++) {
+    for (let col = 1; col <= TOTAL_COLUNAS; col++) {
       const cell = linha.getCell(col);
       cell.font = fonte;
       cell.border = bordas;
       cell.alignment = { vertical: "middle", wrapText: true };
       if (COLUNAS_FORNECEDOR.includes(col)) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ROSA } };
     }
-    linha.getCell(7).numFmt = "#,##0.00";
+    linha.getCell(7).numFmt = "#,##0.000";
     linha.getCell(8).numFmt = "#,##0.00";
+    linha.getCell(9).numFmt = "#,##0.00";
   });
 
   const linhaVazia = linhaCabecalho + itens.length + 1;
   const linhaTotal = linhaVazia + 1;
-  for (let col = 1; col <= 11; col++) {
+  for (let col = 1; col <= TOTAL_COLUNAS; col++) {
     ws.getRow(linhaVazia).getCell(col).border = bordas;
     const cell = ws.getRow(linhaTotal).getCell(col);
     cell.border = bordas;
@@ -331,8 +343,8 @@ export async function exportPlanilhaFornecedor(info: Cabecalho, itens: ItemCotac
   }
   ws.getCell(`C${linhaTotal}`).value = "GRAND TOTAL";
   ws.getCell(`C${linhaTotal}`).font = { ...fonte, bold: true };
-  const total = ws.getCell(`H${linhaTotal}`);
-  total.value = { formula: `SUM(H${linhaCabecalho + 1}:H${linhaCabecalho + itens.length})` };
+  const total = ws.getCell(`I${linhaTotal}`);
+  total.value = { formula: `SUM(I${linhaCabecalho + 1}:I${linhaCabecalho + itens.length})` };
   total.numFmt = "#,##0.00";
   total.font = { ...fonte, bold: true };
 
@@ -351,18 +363,18 @@ export function exportPlanilhaPrecos(info: Cabecalho, itens: ItemCotacao[]) {
   const aoa: (string | number | { t: string; f: string })[][] = [
     ["SUPPLIER QUOTATION RESPONSE"], ["Subject:", info.assunto], ["Supplier:", info.fornecedor || ""],
     ["Sent date:", dataEnvio], [],
-    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"],
+    ["Item", "Code", "Material / Description", "Category", "Unit", "Qty", COL_PESO, "Unit Price", "Total", "Delivery Time", "Incoterm", "Supplier Notes"],
   ];
   const headerRow = aoa.length;
   itens.forEach((item, idx) => {
     const line = headerRow + idx + 1;
     aoa.push([idx + 1, item.codigo || "", item.material, categoryLabel(item), item.unidade, item.quantidade,
-      item.precoUnitario ?? "", { t: "n", f: `IF(G${line}="","",F${line}*G${line})` },
+      item.pesoUnitario ?? "", item.precoUnitario ?? "", { t: "n", f: `IF(H${line}="","",F${line}*H${line})` },
       item.prazoEntrega, item.incoterm, item.observacaoFornecedor]);
   });
-  aoa.push([], ["", "", "GRAND TOTAL", "", "", "", "", { t: "n", f: `SUM(H${headerRow + 1}:H${headerRow + itens.length})` }, "", "", ""]);
+  aoa.push([], ["", "", "GRAND TOTAL", "", "", "", "", "", { t: "n", f: `SUM(I${headerRow + 1}:I${headerRow + itens.length})` }, "", "", ""]);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 50 }, { wch: 20 }, { wch: 6 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 28 }];
+  ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 50 }, { wch: 20 }, { wch: 6 }, { wch: 8 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 28 }];
   XLSX.utils.book_append_sheet(wb, ws, "Supplier Response");
   XLSX.writeFile(wb, `supplier_response_${slug(info.assunto)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
@@ -475,15 +487,16 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   // Larguras somam 281 mm (A4 paisagem menos 8 mm de margem de cada lado).
   const cols = [
     { label: "Item", w: 10 },
-    { label: "Code", w: 34 },
-    { label: "Material / Description", w: 70 },
-    { label: "Category", w: 24 },
+    { label: "Code", w: 32 },
+    { label: "Material / Description", w: 62 },
+    { label: "Category", w: 22 },
     { label: "Unit", w: 10 },
     { label: "Qty", w: 12 },
-    { label: "Unit Price", w: 26 },
-    { label: "Delivery Time", w: 27 },
+    { label: COL_PESO, w: 20 },
+    { label: "Unit Price", w: 24 },
+    { label: "Delivery Time", w: 26 },
     { label: "Incoterm", w: 22 },
-    { label: "Supplier Notes", w: 46 },
+    { label: "Supplier Notes", w: 41 },
   ];
   const tableW = cols.reduce((s, c) => s + c.w, 0);
   const left = 8;
@@ -525,22 +538,27 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
   };
 
   const drawTableHead = (y: number) => {
-    doc.setFillColor(...BLUE);
-    doc.rect(left, y, tableW, 8, "F");
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.2);
-    drawColumnLines(y, 8);
-    doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
+    // Títulos longos (ex.: "Unit Weight (U/W)") quebram em mais de uma linha.
+    const labels = cols.map((c) => doc.splitTextToSize(c.label, c.w - cellPad * 2) as string[]);
+    const headH = Math.max(8, Math.max(...labels.map((l) => l.length)) * lineH + 3);
+    doc.setFillColor(...BLUE);
+    doc.rect(left, y, tableW, headH, "F");
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.2);
+    drawColumnLines(y, headH);
+    doc.setTextColor(255, 255, 255);
     let x = left;
-    cols.forEach((c) => {
-      doc.text(c.label, x + cellPad, y + 5.4);
+    cols.forEach((c, ci) => {
+      const lines = labels[ci]!;
+      const firstBaseline = y + (headH - lines.length * lineH) / 2 + lineH * 0.8;
+      lines.forEach((line, li) => doc.text(line, x + cellPad, firstBaseline + li * lineH));
       x += c.w;
     });
     doc.setTextColor(30, 30, 30);
     doc.setFont("helvetica", "normal");
-    return y + 8;
+    return y + headH;
   };
 
   drawHeaderBar();
@@ -564,7 +582,7 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
     y += lines.length * 4.2 + 1;
   }
   doc.setFontSize(8);
-  doc.text("Unit price, delivery time, Incoterm and supplier notes are editable in this PDF.", left, y);
+  doc.text("Supplier name, unit weight (U/W), unit price, delivery time, Incoterm and supplier notes are editable in this PDF.", left, y);
   y += 5;
 
   y = drawTableHead(y);
@@ -609,10 +627,11 @@ export async function exportPdfEditavel(info: Cabecalho, itens: ItemCotacao[]) {
 
     // Campos editáveis (AcroForm)
     const fieldDefs: { name: string; w: number }[] = [
-      { name: `unit_price_${idx + 1}`, w: cols[6]!.w },
-      { name: `delivery_time_${idx + 1}`, w: cols[7]!.w },
-      { name: `incoterm_${idx + 1}`, w: cols[8]!.w },
-      { name: `supplier_notes_${idx + 1}`, w: cols[9]!.w },
+      { name: `unit_weight_${idx + 1}`, w: cols[6]!.w },
+      { name: `unit_price_${idx + 1}`, w: cols[7]!.w },
+      { name: `delivery_time_${idx + 1}`, w: cols[8]!.w },
+      { name: `incoterm_${idx + 1}`, w: cols[9]!.w },
+      { name: `supplier_notes_${idx + 1}`, w: cols[10]!.w },
     ];
     fieldDefs.forEach((def) => {
       const field = new AcroFormTextField() as AcroFormTextField & { Rect: number[] };

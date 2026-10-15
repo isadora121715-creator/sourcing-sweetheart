@@ -10,6 +10,7 @@ export type ItemCotacao = {
   observacao: string;
   categoria: CategoriaMaterial | "";
   precoUnitario: number | null;
+  pesoUnitario: number | null;
   prazoEntrega: string;
   incoterm: string;
   observacaoFornecedor: string;
@@ -55,6 +56,7 @@ export type Cotacao = {
 
 export type PrecoFornecedor = {
   precoUnitario: number | null;
+  pesoUnitario: number | null;
   prazoEntrega: string;
   incoterm: string;
   observacaoFornecedor: string;
@@ -75,6 +77,7 @@ export function itensComResposta(cotacao: Cotacao, resposta: RespostaFornecedor 
     return {
       ...item,
       precoUnitario: preco?.precoUnitario ?? null,
+      pesoUnitario: preco?.pesoUnitario ?? null,
       prazoEntrega: preco?.prazoEntrega ?? "",
       incoterm: preco?.incoterm ?? "",
       observacaoFornecedor: preco?.observacaoFornecedor ?? "",
@@ -100,6 +103,7 @@ type ItemRow = {
 type RespostaItemRow = {
   item_id: string;
   preco_unitario: number | string | null;
+  peso_unitario: number | string | null;
   prazo_entrega: string | null;
   incoterm: string | null;
   observacao_fornecedor: string | null;
@@ -143,6 +147,7 @@ export async function listarCotacoes(): Promise<Cotacao[]> {
           ? (i.categoria as CategoriaMaterial)
           : "",
         precoUnitario: null,
+        pesoUnitario: null,
         prazoEntrega: "",
         incoterm: "",
         observacaoFornecedor: "",
@@ -159,6 +164,7 @@ export async function listarCotacoes(): Promise<Cotacao[]> {
             ri.item_id,
             {
               precoUnitario: ri.preco_unitario === null ? null : Number(ri.preco_unitario),
+              pesoUnitario: ri.peso_unitario === null || ri.peso_unitario === undefined ? null : Number(ri.peso_unitario),
               prazoEntrega: ri.prazo_entrega ?? "",
               incoterm: ri.incoterm ?? "",
               observacaoFornecedor: ri.observacao_fornecedor ?? "",
@@ -219,6 +225,7 @@ export async function salvarRespostaCotacao(input: {
   if (!fornecedor) throw new Error("Informe o nome do fornecedor.");
   if (!input.itens.some((item) => item.precoUnitario !== null)) throw new Error("Informe ao menos um preço.");
   if (input.itens.some((item) => item.precoUnitario !== null && (!Number.isFinite(item.precoUnitario) || item.precoUnitario < 0))) throw new Error("Os preços devem ser números maiores ou iguais a zero.");
+  if (input.itens.some((item) => item.pesoUnitario !== null && (!Number.isFinite(item.pesoUnitario) || item.pesoUnitario < 0))) throw new Error("Os pesos unitários devem ser números maiores ou iguais a zero.");
   if (input.itens.some((item) => !item.id)) throw new Error("Item da cotação sem identificação.");
 
   let respostaId = input.respostaId;
@@ -245,12 +252,16 @@ export async function salvarRespostaCotacao(input: {
       resposta_id: respostaSalvaId,
       item_id: item.id!,
       preco_unitario: item.precoUnitario,
+      peso_unitario: item.pesoUnitario,
       prazo_entrega: item.prazoEntrega || null,
       incoterm: item.incoterm || null,
       observacao_fornecedor: item.observacaoFornecedor || null,
     })),
     { onConflict: "resposta_id,item_id" },
   );
+  if (itensError?.message.includes("peso_unitario")) {
+    throw new Error("O banco ainda não tem a coluna de peso unitário. Aplique a migração 0004_add_unit_weight no Lovable.");
+  }
   if (itensError) throw itensError;
 
   const { error } = await supabase.from("cotacoes").update({ status: "Respondida" }).eq("id", input.cotacaoId);

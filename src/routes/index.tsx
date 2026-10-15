@@ -151,6 +151,7 @@ function ItensHistorico({ cotacao }: { cotacao: Cotacao }) {
               )}
               {modo === "fornecedor" && (
                 <>
+                  <TableHead className="text-right">U/W</TableHead>
                   <TableHead className="text-right">Preço unit.</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Prazo de entrega</TableHead>
@@ -189,6 +190,7 @@ function ItensHistorico({ cotacao }: { cotacao: Cotacao }) {
                   )}
                   {modo === "fornecedor" && doFornecedor && (
                     <>
+                      <TableCell className="text-right tabular-nums">{doFornecedor.pesoUnitario === null ? "—" : doFornecedor.pesoUnitario.toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</TableCell>
                       <TableCell className="text-right tabular-nums">{doFornecedor.precoUnitario === null ? "—" : fmtValor(doFornecedor.precoUnitario)}</TableCell>
                       <TableCell className="text-right tabular-nums">{doFornecedor.precoUnitario === null ? "—" : fmtValor(doFornecedor.precoUnitario * i.quantidade)}</TableCell>
                       <TableCell>{doFornecedor.prazoEntrega || "—"}</TableCell>
@@ -212,7 +214,7 @@ function ItensHistorico({ cotacao }: { cotacao: Cotacao }) {
                 )}
                 {modo === "fornecedor" && respostaSelecionada && (
                   <>
-                    <TableCell />
+                    <TableCell colSpan={2} />
                     <TableCell className="text-right tabular-nums">{fmtValor(totalResposta(cotacao, respostaSelecionada))}</TableCell>
                     <TableCell colSpan={3} />
                   </>
@@ -227,7 +229,7 @@ function ItensHistorico({ cotacao }: { cotacao: Cotacao }) {
 }
 
 function linhaVazia(ordem: number): ItemCotacao {
-  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "", precoUnitario: null, prazoEntrega: "", incoterm: "", observacaoFornecedor: "" };
+  return { ordem, material: "", codigo: "", unidade: "PC", quantidade: 1, observacao: "", categoria: "", precoUnitario: null, pesoUnitario: null, prazoEntrega: "", incoterm: "", observacaoFornecedor: "" };
 }
 
 function CotacaoPage() {
@@ -306,7 +308,7 @@ function CotacaoPage() {
       if (resposta.some((linha) => linha.item > itensResposta.length)) throw new Error("A planilha contém itens que não existem nesta cotação.");
       setItensResposta((prev) => prev.map((item, idx) => {
         const importado = resposta.find((linha) => linha.item === idx + 1);
-        return importado ? { ...item, precoUnitario: importado.precoUnitario, prazoEntrega: importado.prazoEntrega, incoterm: importado.incoterm, observacaoFornecedor: importado.observacaoFornecedor } : item;
+        return importado ? { ...item, precoUnitario: importado.precoUnitario, pesoUnitario: importado.pesoUnitario, prazoEntrega: importado.prazoEntrega, incoterm: importado.incoterm, observacaoFornecedor: importado.observacaoFornecedor } : item;
       }));
       toast.success(`${resposta.length} item(ns) importado(s). Confira antes de salvar.`);
     } catch (error) {
@@ -745,11 +747,12 @@ function CotacaoPage() {
           </div>
           <div className="overflow-x-auto rounded-md border">
             <Table>
-              <TableHeader><TableRow><TableHead className="w-10">#</TableHead><TableHead>Material</TableHead><TableHead className="w-32">Preço unitário</TableHead><TableHead className="w-36">Prazo de entrega</TableHead><TableHead className="w-28">Incoterm</TableHead><TableHead className="w-52">Observação</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="w-10">#</TableHead><TableHead>Material</TableHead><TableHead className="w-28">Unit Weight (U/W)</TableHead><TableHead className="w-32">Preço unitário</TableHead><TableHead className="w-36">Prazo de entrega</TableHead><TableHead className="w-28">Incoterm</TableHead><TableHead className="w-52">Observação</TableHead></TableRow></TableHeader>
               <TableBody>{itensResposta.map((item, idx) => (
                 <TableRow key={item.id ?? idx}>
                   <TableCell>{idx + 1}</TableCell>
                   <TableCell><div className="min-w-48 font-medium">{item.material}</div><div className="text-xs text-muted-foreground">{item.quantidade} {item.unidade}</div></TableCell>
+                  <TableCell><Input className="min-w-24" aria-label={`Peso unitário do item ${idx + 1}`} type="number" min={0} step="0.001" value={item.pesoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { pesoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
                   <TableCell><Input className="min-w-28" aria-label={`Preço unitário do item ${idx + 1}`} type="number" min={0} step="0.01" value={item.precoUnitario ?? ""} onChange={(e) => atualizarResposta(idx, { precoUnitario: e.target.value === "" ? null : Number(e.target.value) })} /></TableCell>
                   <TableCell><Input className="min-w-32" aria-label={`Prazo de entrega do item ${idx + 1}`} value={item.prazoEntrega} onChange={(e) => atualizarResposta(idx, { prazoEntrega: e.target.value })} /></TableCell>
                   <TableCell><Input className="min-w-24" aria-label={`Incoterm do item ${idx + 1}`} value={item.incoterm} onChange={(e) => atualizarResposta(idx, { incoterm: e.target.value.toUpperCase() })} placeholder="FOB" /></TableCell>
